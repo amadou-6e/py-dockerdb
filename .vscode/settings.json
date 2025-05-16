@@ -1,0 +1,22 @@
+{
+    "python.testing.pytestArgs": [
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.analysis.extraPaths": [
+        "./backend/src", "./backend/"
+    ],
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "eeyore.yapf",
+    "diffEditor.maxFileSize": 0,
+    "diffEditor.maxComputationTime": 0,
+    "editor.formatOnType": true,
+    "editor.formatOnPaste": true,
+    "yapf.args": [
+        "--style",
+        "{based_on_style: google, COLUMN_LIMIT: 100, SPLIT_BEFORE_BITWISE_OPERATOR: true}"
+    ],
+    "[json]": {
+        "editor.defaultFormatter": "vscode.json-language-features"
+    }
+}
