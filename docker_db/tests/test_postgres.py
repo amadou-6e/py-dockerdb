@@ -10,14 +10,15 @@ from contextlib import redirect_stdout
 from psycopg2.extras import RealDictCursor
 from docker.errors import ImageNotFound
 from docker.models.containers import Container
+from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
-from postgres import PostgresConfig, PostgresDB
+from postgres_db import PostgresConfig, PostgresDB
 
 
 @pytest.fixture(scope="module")
 def dockerfile():
-    return Path(CONFIG_DIR, "Dockerfile.database")
+    return Path(CONFIG_DIR, "Dockerfile.pgdb")
 
 
 @pytest.fixture(scope="module")
@@ -25,46 +26,9 @@ def init_script():
     return Path(CONFIG_DIR, "initdb.sh")
 
 
-@pytest.fixture(scope="module")
-def postgres_config() -> PostgresConfig:
-    pgdata = Path(TEMP_DIR, "pgdata")
-    pgdata.mkdir(parents=True, exist_ok=True)
-
-    name = f"test-postgres-{uuid.uuid4().hex[:8]}"
-
-    config = PostgresConfig(
-        user="testuser",
-        password="testpass",
-        database="testdb",
-        project_name="itest",
-        workdir=TEMP_DIR,
-        container_name=name,
-        retries=20,
-        delay=5,
-    )
-    return config
-
-
-@pytest.fixture(scope="module")
-def postgres_init_config() -> PostgresConfig:
-    pgdata = Path(TEMP_DIR, "pgdata")
-    pgdata.mkdir(parents=True, exist_ok=True)
-
-    name = f"test-postgres-{uuid.uuid4().hex[:8]}"
-
-    config = PostgresConfig(
-        user="testuser",
-        password="testpass",
-        database="testdb",
-        project_name="itest",
-        workdir=TEMP_DIR,
-        init_script=Path(CONFIG_DIR, "initdb.sh"),
-        dockerfile_path=Path(CONFIG_DIR, "Dockerfile.pgdb"),
-        container_name=name,
-        retries=20,
-        delay=5,
-    )
-    return config
+# =======================================
+#                 Cleanup
+# =======================================
 
 
 @pytest.fixture(autouse=True)
@@ -77,74 +41,6 @@ def cleanup_temp_dir():
     yield
     os.system(cmd)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
-
-@pytest.fixture(scope="module")
-def postgres_manager(postgres_config: PostgresConfig):
-    manager = PostgresDB(postgres_config)
-    yield manager
-
-
-@pytest.fixture(scope="module")
-def postgres_init_manager(postgres_init_config):
-    """Fixture that provides a PostgresDockerManager instance with test config."""
-    manager = PostgresDB(config=postgres_init_config)
-    yield manager
-
-
-@pytest.fixture()
-def postgres_container(postgres_manager: PostgresDB):
-    container = postgres_manager._create_container()
-    return container
-
-
-@pytest.fixture()
-def postgres_init_container(postgres_init_manager: PostgresDB):
-    container = postgres_init_manager._create_container()
-    return container
-
-
-@pytest.fixture
-def remove_test_image(postgres_config: PostgresConfig):
-    """Helper to remove the test image."""
-    try:
-        client = docker.from_env()
-        client.images.remove(postgres_config.image_name, force=True)
-        print(f"Removed existing image: {postgres_config.image_name}")
-    except ImageNotFound:
-        # Image doesn't exist, that's fine
-        pass
-    except Exception as e:
-        print(f"Warning: Failed to remove image: {str(e)}")
-
-
-@pytest.fixture
-def remove_test_container(postgres_config):
-    # ensure no leftover container
-    client = docker.from_env()
-    try:
-        c = client.containers.get(postgres_config.container_name)
-        c.remove(force=True)
-    except docker.errors.NotFound:
-        pass
-
-
-def test_docker_running(postgres_manager: PostgresDB):
-    import docker
-    client = docker.from_env()
-    client.ping()
-    assert postgres_manager._is_docker_running(), "Docker is not running"
-
-
-@pytest.fixture
-def create_test_image(
-    postgres_config: PostgresConfig,
-    postgres_manager: PostgresDB,
-):
-    """Check if the given image exists."""
-    postgres_manager._build_image()
-    client = docker.from_env()
-    assert client.images.get(postgres_config.image_name), "Image should exist after building"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -168,6 +64,158 @@ def cleanup_test_containers():
                 container.remove(force=True)
             except docker.errors.APIError as e:
                 print(f"Failed to remove container {name}: {e}")
+
+
+# =======================================
+#                 Configs
+# =======================================
+
+
+@pytest.fixture(scope="module")
+def postgres_config() -> PostgresConfig:
+    pgdata = Path(TEMP_DIR, "pgdata")
+    pgdata.mkdir(parents=True, exist_ok=True)
+
+    name = f"test-postgres-{uuid.uuid4().hex[:8]}"
+
+    config = PostgresConfig(
+        user="testuser",
+        password="testpass",
+        database="testdb",
+        project_name="itest",
+        workdir=TEMP_DIR,
+        container_name=name,
+        retries=20,
+        delay=5,
+    )
+    return config
+
+
+@pytest.fixture(scope="module")
+def postgres_init_config(
+    dockerfile: Path,
+    init_script: Path,
+) -> PostgresConfig:
+    pgdata = Path(TEMP_DIR, "pgdata")
+    pgdata.mkdir(parents=True, exist_ok=True)
+
+    name = f"test-postgres-{uuid.uuid4().hex[:8]}"
+
+    config = PostgresConfig(
+        user="testuser",
+        password="testpass",
+        database="testdb",
+        project_name="itest",
+        workdir=TEMP_DIR,
+        init_script=init_script,
+        dockerfile_path=dockerfile,
+        container_name=name,
+        retries=20,
+        delay=5,
+    )
+    return config
+
+
+# =======================================
+#                 Managers
+# =======================================
+
+
+@pytest.fixture(scope="module")
+def postgres_manager(postgres_config: PostgresConfig):
+    manager = PostgresDB(postgres_config)
+    yield manager
+
+
+@pytest.fixture(scope="module")
+def postgres_init_manager(postgres_init_config):
+    """Fixture that provides a PostgresDockerManager instance with test config."""
+    manager = PostgresDB(config=postgres_init_config)
+    yield manager
+
+
+# =======================================
+#                 Images
+# =======================================
+
+
+@pytest.fixture
+def postgres_image(
+    postgres_config: PostgresConfig,
+    postgres_manager: PostgresDB,
+) -> Image:
+    """Check if the given image exists."""
+    postgres_manager._build_image()
+    client = docker.from_env()
+    assert client.images.get(postgres_config.image_name), "Image should exist after building"
+    return client.images.get(postgres_config.image_name)
+
+
+@pytest.fixture
+def postgres_init_image(
+    postgres_init_config: PostgresConfig,
+    postgres_init_manager: PostgresDB,
+) -> Image:
+    """Check if the given image exists."""
+    postgres_init_manager._build_image()
+    client = docker.from_env()
+    assert client.images.get(postgres_init_config.image_name), "Image should exist after building"
+    return client.images.get(postgres_init_config.image_name)
+
+
+@pytest.fixture
+def remove_test_image(postgres_config: PostgresConfig):
+    """Helper to remove the test image."""
+    try:
+        client = docker.from_env()
+        client.images.remove(postgres_config.image_name, force=True)
+        print(f"Removed existing image: {postgres_config.image_name}")
+    except ImageNotFound:
+        # Image doesn't exist, that's fine
+        pass
+    except Exception as e:
+        print(f"Warning: Failed to remove image: {str(e)}")
+
+
+# =======================================
+#                 Containers
+# =======================================
+
+
+@pytest.fixture()
+def postgres_container(
+    postgres_manager: PostgresDB,
+    postgres_image: Image,
+):
+    container = postgres_manager._create_container()
+    return container
+
+
+@pytest.fixture()
+def postgres_init_container(
+    postgres_init_manager: PostgresDB,
+    postgres_init_image: Image,
+):
+    container = postgres_init_manager._create_container()
+    return container
+
+
+@pytest.fixture
+def remove_test_container(postgres_config):
+    # ensure no leftover container
+    client = docker.from_env()
+    try:
+        c = client.containers.get(postgres_config.container_name)
+        c.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+
+
+def test_docker_running(postgres_manager: PostgresDB):
+    import docker
+    client = docker.from_env()
+    client.ping()
+    assert postgres_manager._is_docker_running(), "Docker is not running"
 
 
 @pytest.fixture
@@ -208,7 +256,7 @@ def test_build_image_first_time(
 def test_build_image_second_time(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,
-    create_test_image,
+    postgres_image,
 ):
     """Test that building the image a second time skips the build process."""
     f = io.StringIO()
@@ -390,6 +438,7 @@ def test_stop_db(
 def test_delete_db(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,
+    postgres_init_container: Container,
 ):
     # Ensure container starts and database is reachable
     Path(postgres_init_config.volume_path).mkdir(parents=True, exist_ok=True)

@@ -16,6 +16,7 @@ class PostgresConfig(ContainerConfig):
     user: str
     password: str
     database: str
+    _type: str = "postgres"
 
 
 class PostgresDB(ContainerManager):
@@ -59,7 +60,9 @@ class PostgresDB(ContainerManager):
         ports = {'5432/tcp': self.config.port}
 
         # If init script provided, copy to image via bind mount or Dockerfile
-        if self.config.init_script is not None and self.config.init_script.exists():
+        if self.config.init_script is not None:
+            if self.config.init_script.exists():
+                raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
             mounts.append(
                 docker.types.Mount(
                     target='/docker-entrypoint-initdb.d',
