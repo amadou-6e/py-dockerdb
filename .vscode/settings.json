@@ -1,10 +1,11 @@
 {
     "python.testing.pytestArgs": [
+        "docker_db"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.analysis.extraPaths": [
-        "./backend/src", "./backend/"
+        "./docker_db/src", "./docker_db/"
     ],
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "eeyore.yapf",
