@@ -13,17 +13,19 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
-from postgres_db import PostgresConfig, PostgresDB
+from docker_db.postgres_db import PostgresConfig, PostgresDB
+# -- Tests --
+from .utils import nuke_dir
 
 
 @pytest.fixture(scope="module")
 def dockerfile():
-    return Path(CONFIG_DIR, "Dockerfile.pgdb")
+    return Path(CONFIG_DIR, "postgres", "Dockerfile.pgdb")
 
 
 @pytest.fixture(scope="module")
 def init_script():
-    return Path(CONFIG_DIR, "initdb.sh")
+    return Path(CONFIG_DIR, "postgres", "initdb.sh")
 
 
 # =======================================
@@ -34,12 +36,10 @@ def init_script():
 @pytest.fixture(autouse=True)
 def cleanup_temp_dir():
     """Clean up vault files using OS-agnostic commands."""
-    cmd = f'rmdir /s /q "{TEMP_DIR}"' if platform.system() == "Windows" else f'rm -rf "{TEMP_DIR}"'
-
-    os.system(cmd)
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     yield
-    os.system(cmd)
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -385,12 +385,44 @@ def test_stop_and_remove_container(
     assert len(conts) == 0, "Container was not removed"
 
 
-@pytest.mark.usefixtures("clear_port_1433")
+@pytest.mark.usefixtures("clear_port_5432")
+@pytest.mark.parametrize("docker_file_path", [
+    Path(CONFIG_DIR, "postgres", "Dockerfile.pgdb"),
+    None,
+])
+@pytest.mark.parametrize("init_script_path", [
+    Path(CONFIG_DIR, "postgres", "initdb.sh"),
+    None,
+])
+@pytest.mark.parametrize("image_name", [
+    "test-postgres-image",
+    "postgres:latest",
+    "ankane/pgvector:latest",
+    None,
+])
 def test_create_db(
+    docker_file_path: Path | None,
+    init_script_path: Path | None,
+    image_name: str | None,
     postgres_init_config: PostgresConfig,
-    postgres_init_manager: PostgresDB,
 ):
-    postgres_init_manager.create_db()
+    name = f"test-postgres-{uuid.uuid4().hex[:8]}"
+
+    config = PostgresConfig(
+        user="testuser",
+        password="testpass",
+        database="testdb",
+        project_name="itest",
+        dockerfile_path=docker_file_path,
+        init_script=init_script_path,
+        image_name=image_name,
+        workdir=TEMP_DIR,
+        container_name=name,
+        retries=20,
+        delay=5,
+    )
+    manager = PostgresDB(config)
+    manager.create_db()
     # Give Postgres a moment to finish init
     time.sleep(2)
 
@@ -403,13 +435,14 @@ def test_create_db(
         cursor_factory=RealDictCursor,
     )
     cur = conn.cursor()
-    cur.execute("SELECT tablename FROM pg_tables WHERE tablename='test_table';")
-    result = cur.fetchone()
-    assert result is not None, "Init script did not create test_table"
+    if init_script_path is not None:
+        cur.execute("SELECT tablename FROM pg_tables WHERE tablename='test_table';")
+        result = cur.fetchone()
+        assert result is not None, "Init script did not create test_table"
     conn.close()
 
 
-@pytest.mark.usefixtures("clear_port_1433")
+@pytest.mark.usefixtures("clear_port_5432")
 def test_stop_db(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,

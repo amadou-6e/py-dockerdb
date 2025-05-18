@@ -7,7 +7,7 @@ from docker.errors import APIError
 from docker.models.containers import Container
 from mysql.connector.errors import OperationalError
 # -- Ours --
-from containers import ContainerConfig, ContainerManager
+from docker_db.containers import ContainerConfig, ContainerManager
 
 
 class MySQLConfig(ContainerConfig):

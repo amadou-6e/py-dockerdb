@@ -7,7 +7,7 @@ from docker.errors import APIError
 from docker.models.containers import Container
 from pyodbc import OperationalError, InterfaceError
 # -- Ours --
-from containers import ContainerConfig, ContainerManager
+from docker_db.containers import ContainerConfig, ContainerManager
 
 
 class MSSQLConfig(ContainerConfig):

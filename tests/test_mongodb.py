@@ -7,13 +7,16 @@ import docker
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from pathlib import Path
+
 from contextlib import redirect_stdout
 from docker.errors import ImageNotFound
 from docker.models.containers import Container
 from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
-from mongo_db import MongoDBConfig, MongoDB
+from docker_db.mongo_db import MongoDBConfig, MongoDB
+# -- Tests --
+from .utils import nuke_dir
 
 
 @pytest.fixture(scope="module")
@@ -60,28 +63,12 @@ def cleanup_temp_dir():
     Brutally clean TEMP_DIR before and after each test, cross-platform.
     """
 
-    def nuke_temp_dir():
-        if TEMP_DIR.exists():
-            # chmod all files to ensure they are deletable
-            for root, dirs, files in os.walk(TEMP_DIR, topdown=False):
-                for name in files:
-                    try:
-                        os.chmod(os.path.join(root, name), 0o777)
-                    except Exception:
-                        pass
-                for name in dirs:
-                    try:
-                        os.chmod(os.path.join(root, name), 0o777)
-                    except Exception:
-                        pass
-            shutil.rmtree(TEMP_DIR, ignore_errors=True)
-
-    nuke_temp_dir()
+    nuke_dir()
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
     yield
 
-    nuke_temp_dir()
+    nuke_dir()
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 

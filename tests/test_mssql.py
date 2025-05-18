@@ -12,7 +12,7 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
-from mssql_db import MSSQLConfig, MSSQLDB
+from docker_db.mssql_db import MSSQLConfig, MSSQLDB
 
 
 @pytest.fixture(scope="module")

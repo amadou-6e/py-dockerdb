@@ -12,7 +12,7 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
-from mysql_db import MySQLConfig, MySQLDB
+from docker_db.mysql_db import MySQLConfig, MySQLDB
 
 
 @pytest.fixture(scope="module")

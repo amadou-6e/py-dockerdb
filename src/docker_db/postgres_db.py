@@ -9,7 +9,7 @@ from psycopg2.extras import RealDictCursor
 from psycopg2 import OperationalError
 from psycopg2 import sql
 # -- Ours --
-from containers import ContainerConfig, ContainerManager
+from docker_db.containers import ContainerConfig, ContainerManager
 
 
 class PostgresConfig(ContainerConfig):
@@ -61,7 +61,7 @@ class PostgresDB(ContainerManager):
 
         # If init script provided, copy to image via bind mount or Dockerfile
         if self.config.init_script is not None:
-            if self.config.init_script.exists():
+            if not self.config.init_script.exists():
                 raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
             mounts.append(
                 docker.types.Mount(

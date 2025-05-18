@@ -8,7 +8,7 @@
       "program": "${file}",
       "console": "integratedTerminal",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/docker_db/src;${workspaceFolder}/docker_db/;${PYTHONPATH}"
+        "PYTHONPATH": "${workspaceFolder}/src/;${workspaceFolder}/tests/;${PYTHONPATH}"
       }
     },
     {
@@ -18,7 +18,7 @@
       "program": "${file}",
       "console": "integratedTerminal",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/docker_db/src:${workspaceFolder}/docker_db/:${PYTHONPATH}"
+        "PYTHONPATH": "${workspaceFolder}/src/:${workspaceFolder}/tests/:${PYTHONPATH}"
       }
     }
   ]

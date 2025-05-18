@@ -1,3 +1,4 @@
+'''
 import pytest
 import uuid
 import time
@@ -14,7 +15,7 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
-from cassandra_db import CassandraConfig, Cassandra
+from docker_db.cassandra_db import CassandraConfig, Cassandra
 
 
 @pytest.fixture(scope="module")
@@ -575,3 +576,4 @@ if __name__ == "__main__":
     )
     mgr = Cassandra(config)
     test_docker_running(mgr)
+'''

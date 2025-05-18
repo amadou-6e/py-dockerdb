@@ -1,17 +1,16 @@
 {
     "python.testing.pytestArgs": [
-        "docker_db"
+        "tests"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.analysis.extraPaths": [
-        "./docker_db/src", "./docker_db/"
+        "./src", 
     ],
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "eeyore.yapf",
     "diffEditor.maxFileSize": 0,
     "diffEditor.maxComputationTime": 0,
-    "editor.formatOnType": true,
     "editor.formatOnPaste": true,
     "yapf.args": [
         "--style",
