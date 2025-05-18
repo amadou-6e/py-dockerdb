@@ -128,7 +128,7 @@ class MSSQLDB(ContainerManager):
             # Read the script content
             init_sql = script_path.read_text()
             if verbose:
-                print(f"Script content preview: {init_sql[:150]}...")
+                print(f"Script content preview: {init_sql}...")
 
             # Split by GO statements (common in SQL Server scripts)
             statements = [stmt.strip() for stmt in init_sql.split('GO') if stmt.strip()]

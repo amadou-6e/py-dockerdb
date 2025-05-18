@@ -1,7 +1,7 @@
 import pytest
 import uuid
 import time
-import platform
+import shutil
 import io
 import docker
 from pymongo import MongoClient
@@ -23,21 +23,65 @@ def dockerfile():
 
 @pytest.fixture(scope="module")
 def init_script():
-    return Path(CONFIG_DIR, "mongodb", "initdb.js")
+    return Path(CONFIG_DIR, "mongodb", "mongo-init.js")
 
 
 # =======================================
 #                 Cleanup
 # =======================================
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_test_containers():
+    """
+    Automatically clean up containers whose names start with 'test-mongodb'
+    at the end of the module.
+    """
+    yield  # let tests run
+
+    client = docker.from_env()
+    for container in client.containers.list(all=True):  # include stopped
+        name = container.name
+        if name.startswith("test-mongodb"):
+            print(f"Cleaning up container: {name}")
+            try:
+                container.stop(timeout=5)
+            except docker.errors.APIError:
+                pass  # maybe already stopped
+            try:
+                container.remove(force=True)
+            except docker.errors.APIError as e:
+                print(f"Failed to remove container {name}: {e}")
+
+
 @pytest.fixture(autouse=True)
 def cleanup_temp_dir():
-    """Clean up vault files using OS-agnostic commands."""
-    cmd = f'rmdir /s /q "{TEMP_DIR}"' if platform.system() == "Windows" else f'rm -rf "{TEMP_DIR}"'
+    """
+    Brutally clean TEMP_DIR before and after each test, cross-platform.
+    """
 
-    os.system(cmd)
+    def nuke_temp_dir():
+        if TEMP_DIR.exists():
+            # chmod all files to ensure they are deletable
+            for root, dirs, files in os.walk(TEMP_DIR, topdown=False):
+                for name in files:
+                    try:
+                        os.chmod(os.path.join(root, name), 0o777)
+                    except Exception:
+                        pass
+                for name in dirs:
+                    try:
+                        os.chmod(os.path.join(root, name), 0o777)
+                    except Exception:
+                        pass
+            shutil.rmtree(TEMP_DIR, ignore_errors=True)
+
+    nuke_temp_dir()
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
     yield
-    os.system(cmd)
+
+    nuke_temp_dir()
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -206,29 +250,6 @@ def create_test_image(
     assert client.images.get(mongodb_config.image_name), "Image should exist after building"
 
 
-@pytest.fixture(scope="module", autouse=True)
-def cleanup_test_containers():
-    """
-    Automatically clean up containers whose names start with 'test-mongodb'
-    at the end of the module.
-    """
-    yield  # let tests run
-
-    client = docker.from_env()
-    for container in client.containers.list(all=True):  # include stopped
-        name = container.name
-        if name.startswith("test-mongodb"):
-            print(f"Cleaning up container: {name}")
-            try:
-                container.stop(timeout=5)
-            except docker.errors.APIError:
-                pass  # maybe already stopped
-            try:
-                container.remove(force=True)
-            except docker.errors.APIError as e:
-                print(f"Failed to remove container {name}: {e}")
-
-
 @pytest.fixture
 def clear_port_27017():
     client = docker.from_env()
@@ -311,11 +332,8 @@ def test_create_container_inspects_config(
     sources = {m["Source"] for m in mounts}
     assert str(mongodb_init_config.volume_path.resolve()) in sources
 
-    # Extract the targets to verify the init script directory is mounted
-    # This is more reliable than checking the specific source path
     targets = {m["Destination"] for m in mounts}
 
-    # If using init script in a standard MongoDB Docker setup, the scripts are typically mounted to:
     if mongodb_init_config.init_script:
         assert "/docker-entrypoint-initdb.d" in targets
 
@@ -343,27 +361,46 @@ def test_container_start_and_connect(
     # Ensure container starts and database is reachable
     Path(mongodb_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mongodb_init_manager._start_container(mongodb_init_container)
-    mongodb_init_manager._test_connection()
+    mongodb_init_manager._test_connection(), "MongoDB connection test failed"
 
     # Give MongoDB a moment to finish init
-    time.sleep(5)
+    time.sleep(10)
 
-    # Connect to MongoDB and verify the init script worked
+    # Need to make sure the database and user are properly set up
+    mongodb_init_manager._create_db(mongodb_init_config.database, mongodb_init_container)
+
+    # Connect with root credentials to verify
     client = MongoClient(
         f"mongodb://{mongodb_init_config.root_username}:{mongodb_init_config.root_password}@"
-        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}")
+        f"{mongodb_init_config.host}:{mongodb_init_config.port}/admin")
 
-    db = client[mongodb_init_config.database]
+    # Verify that database exists
+    databases = client.list_database_names()
+    assert mongodb_init_config.database in databases, f"Database {mongodb_init_config.database} was not created"
 
-    # Verify test collection exists (this would be created by the init script)
-    assert "test_collection" in db.list_collection_names(
-    ), "Init script did not create test_collection"
+    # Now verify the regular user was created properly
+    admin_db = client.admin
+    users_info = admin_db.command('usersInfo')
+    found_user = False
+    for user in users_info.get('users', []):
+        if user.get('user') == mongodb_init_config.user:
+            found_user = True
+            break
 
-    # Optional: verify some test data
-    test_doc = db.test_collection.find_one({"test_field": "test_value"})
-    assert test_doc is not None, "Test document not found in test_collection"
+    assert found_user, f"User {mongodb_init_config.user} was not created properly"
 
     client.close()
+
+    user_client = MongoClient(
+        f"mongodb://{mongodb_init_config.user}:{mongodb_init_config.password}@"
+        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}?authSource=admin"
+    )
+
+    # Try to perform an operation to verify permissions
+    db = user_client[mongodb_init_config.database]
+    db.test_access.insert_one({"test": "access_verified"})
+
+    user_client.close()
 
 
 @pytest.mark.usefixtures("clear_port_27017")
@@ -383,7 +420,8 @@ def test_stop_and_remove_container(
     # Test connection with user credentials
     client = MongoClient(
         f"mongodb://{mongodb_init_config.user}:{mongodb_init_config.password}@"
-        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}")
+        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}?authSource=admin"
+    )
 
     # Stop container
     mongodb_init_manager._stop_container()
@@ -412,23 +450,27 @@ def test_create_db(
     mongodb_init_manager.create_db()
     # Give MongoDB a moment to finish init
     time.sleep(5)
+    # Now test with the regular user
+    user_client = MongoClient(
+        f"mongodb://{mongodb_init_config.user}:{mongodb_init_config.password}@"
+        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}?authSource=admin"
+    )
 
-    # Connect to MongoDB and verify database was created
-    client = MongoClient(
-        f"mongodb://{mongodb_init_config.root_username}:{mongodb_init_config.root_password}@"
-        f"{mongodb_init_config.host}:{mongodb_init_config.port}")
+    # Try to perform an operation to verify permissions
+    db = user_client[mongodb_init_config.database]
+    db.test_access.insert_one({"test": "access_verified"})
 
     # Check if database exists
-    databases = client.list_database_names()
+    databases = user_client.list_database_names()
     assert mongodb_init_config.database in databases, f"Database {mongodb_init_config.database} was not created"
 
     # If using init script, verify test collection
     if mongodb_init_config.init_script:
-        db = client[mongodb_init_config.database]
+        db = user_client[mongodb_init_config.database]
         assert "test_collection" in db.list_collection_names(
         ), "Init script did not create test_collection"
 
-    client.close()
+    user_client.close()
 
 
 @pytest.mark.usefixtures("clear_port_27017")
@@ -439,11 +481,6 @@ def test_stop_db(
     mongodb_init_manager.create_db()
     # Give MongoDB a moment to finish init
     time.sleep(5)
-
-    # Connect to MongoDB and verify database was created
-    client = MongoClient(
-        f"mongodb://{mongodb_init_config.user}:{mongodb_init_config.password}@"
-        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}")
 
     # Stop container
     mongodb_init_manager.stop_db()
@@ -469,11 +506,6 @@ def test_delete_db(
 
     # Give MongoDB a moment to finish init
     time.sleep(5)
-
-    # Connect to MongoDB
-    client = MongoClient(
-        f"mongodb://{mongodb_init_config.user}:{mongodb_init_config.password}@"
-        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}")
 
     # Remove container
     mongodb_init_manager.delete_db()

@@ -1,5 +1,6 @@
 env/
 venv/
+.venv
 ztrash
 debug.log
 config.yaml

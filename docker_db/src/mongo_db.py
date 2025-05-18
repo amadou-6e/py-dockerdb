@@ -42,15 +42,14 @@ class MongoDB(ContainerManager):
 
         return MongoClient(connection_string)
 
-    def _get_conn_string(self, db_name: str = None):
+    def _get_conn_string(self, db_name: str = None) -> str:
         """
-        Get MongoDB connection string with root credentials
+        Get MongoDB connection string with root credentials.
         """
-        conn_string = (f"mongodb://{self.config.root_username}:{self.config.root_password}@"
-                       f"{self.config.host}:{self.config.port}/")
-
-        conn_string += f"{db_name}" if db_name else "admin"
-        return conn_string
+        db_name = db_name or "admin"
+        return (f"mongodb://{self.config.root_username}:{self.config.root_password}@"
+                f"{self.config.host}:{self.config.port}/"
+                f"{db_name}?authSource=admin")
 
     def _create_container(self):
         """
@@ -60,11 +59,19 @@ class MongoDB(ContainerManager):
             'MONGO_INITDB_ROOT_USERNAME': self.config.root_username,
             'MONGO_INITDB_ROOT_PASSWORD': self.config.root_password,
         }
-
+        '''
         mounts = [
             docker.types.Mount(
                 target='/data/db',
                 source=str(self.config.volume_path),
+                type='bind',
+            )
+        ]
+        '''
+        mounts = [
+            docker.types.Mount(
+                target='/docker-entrypoint-initdb.d/',
+                source=str(Path(self.config.init_script).parent),
                 type='bind',
             )
         ]
@@ -105,37 +112,6 @@ class MongoDB(ContainerManager):
         self._test_connection()
         self._create_db(db_name, container=container)
 
-    def _execute_js_script(self, script_path, db_name, verbose=True):
-        if not script_path or not script_path.exists():
-            if verbose:
-                print(f"Script not found: {script_path}")
-            return False
-
-        if verbose:
-            print(f"Executing JavaScript script: {script_path}")
-
-        try:
-            # Connect directly to the specified database
-            client = MongoClient(self._get_conn_string(db_name))
-            db = client[db_name]
-
-            # Read the script content
-            init_js = script_path.read_text()
-            if verbose:
-                print(f"Script content preview: {init_js[:150]}...")
-
-            # Execute JavaScript in MongoDB
-            result = db.command('eval', init_js, nolock=True)
-
-            client.close()
-            if verbose:
-                print("JavaScript script executed successfully")
-            return True
-
-        except Exception as e:
-            print(f"Failed to execute JavaScript script: {e}")
-            return False
-
     def _create_db(
         self,
         db_name: str = None,
@@ -162,21 +138,20 @@ class MongoDB(ContainerManager):
 
             if not user_exists:
                 # Create user with readWrite role on the specified database
-                admin_db.command('createUser',
-                                 self.config.user,
-                                 pwd=self.config.password,
-                                 roles=[{
-                                     'role': 'readWrite',
-                                     'db': db_name
-                                 }])
+                admin_db.command(
+                    'createUser',
+                    self.config.user,
+                    pwd=self.config.password,
+                    roles=[{
+                        'role': 'readWrite',
+                        'db': db_name
+                    }],
+                )
                 print(f"Created user '{self.config.user}' with access to database '{db_name}'")
             else:
                 print(f"User '{self.config.user}' already exists.")
 
             client.close()
-
-            if self.config.init_script:
-                self._execute_js_script(self.config.init_script, db_name)
 
             # Mark the database as created
             self.database_created = True

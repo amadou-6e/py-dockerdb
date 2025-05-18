@@ -20,6 +20,7 @@ SHORTHAND_MAP = {
     "mariadb": "my",
     "mssql": "ms",
     "mongodb": "mg",
+    "cassandra": "cs",
 }
 
 
@@ -36,9 +37,9 @@ class ContainerConfig(BaseModel):
     project_name : str, default "docker_db"
         Name of the project, used as a prefix for container and image names
     image_name : str, optional
-        Name of the Docker image, defaults to "{project_name}-postgres:dev"
+        Name of the Docker image, defaults to "{project_name}-{db_type}:dev"
     container_name : str, optional
-        Name of the Docker container, defaults to "{project_name}-postgres"
+        Name of the Docker container, defaults to "{project_name}-{db_type}"
     workdir : Path, optional
         Working directory for Docker operations, defaults to current directory
     dockerfile_path : Path, optional
@@ -262,7 +263,7 @@ class ContainerManager:
 
         # Wait for healthcheck or direct connect
         if not self.wait_for_db(container=container):
-            raise ConnectionError("PostgreSQL did not become ready in time.")
+            raise ConnectionError("Database did not become ready in time.")
 
     def _create_db(
         self,
