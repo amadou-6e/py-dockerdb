@@ -19,6 +19,7 @@ SHORTHAND_MAP = {
     "mysql": "my",
     "mariadb": "my",
     "mssql": "ms",
+    "mongodb": "mg",
 }
 
 
@@ -262,9 +263,6 @@ class ContainerManager:
         # Wait for healthcheck or direct connect
         if not self.wait_for_db(container=container):
             raise ConnectionError("PostgreSQL did not become ready in time.")
-
-        if hasattr(container, 'db'):
-            self._create_db(container.db, container=container)
 
     def _create_db(
         self,

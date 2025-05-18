@@ -349,8 +349,7 @@ def test_container_start_and_connect(
     mssql_init_manager._start_container(mssql_init_container)
     mssql_init_manager._test_connection()
 
-    # Give SQL Server a moment to finish init
-    time.sleep(15)  # SQL Server may take longer to initialize than MySQL
+    time.sleep(5)
 
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
@@ -378,7 +377,7 @@ def test_stop_and_remove_container(
     mssql_init_manager._test_connection()
 
     # Give SQL Server a moment to finish init
-    time.sleep(15)
+    time.sleep(5)
 
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
@@ -407,13 +406,14 @@ def test_stop_and_remove_container(
     assert len(conts) == 0, "Container was not removed"
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_create_db(
     mssql_init_config: MSSQLConfig,
     mssql_init_manager: MSSQLDB,
 ):
     mssql_init_manager.create_db()
     # Give SQL Server a moment to finish init
-    time.sleep(15)
+    time.sleep(5)
 
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
@@ -429,13 +429,14 @@ def test_create_db(
     conn.close()
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_stop_db(
     mssql_init_config: MSSQLConfig,
     mssql_init_manager: MSSQLDB,
 ):
     mssql_init_manager.create_db()
     # Give SQL Server a moment to finish init
-    time.sleep(15)
+    time.sleep(5)
 
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
@@ -456,18 +457,17 @@ def test_stop_db(
     assert conts[0].status in ("exited", "created"), "Container did not stop"
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_delete_db(
     mssql_init_config: MSSQLConfig,
     mssql_init_manager: MSSQLDB,
-    mssql_init_container: Container,
 ):
     # Ensure container starts and database is reachable
     Path(mssql_init_config.volume_path).mkdir(parents=True, exist_ok=True)
-    mssql_init_manager._start_container()
-    mssql_init_manager._test_connection()
+    mssql_init_manager.create_db()
 
     # Give SQL Server a moment to finish init
-    time.sleep(15)
+    time.sleep(5)
 
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"

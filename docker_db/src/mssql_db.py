@@ -5,7 +5,7 @@ import docker
 from pathlib import Path
 from docker.errors import APIError
 from docker.models.containers import Container
-from pyodbc import Error
+from pyodbc import OperationalError, InterfaceError
 # -- Ours --
 from containers import ContainerConfig, ContainerManager
 
@@ -43,6 +43,16 @@ class MSSQLDB(ContainerManager):
 
         return pyodbc.connect(connection_string)
 
+    def _get_conn_string(self, db_name: str = None):
+        conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                       f"SERVER={self.config.host},{self.config.port};"
+                       f"UID=sa;"
+                       f"PWD={self.config.sa_password};"
+                       f"TrustServerCertificate=yes;"
+                       f"Connection Timeout=10;")
+        conn_string += f"DATABASE={db_name};" if db_name else ""
+        return conn_string
+
     def _create_container(self):
         """
         Create a new MSSQL container with volume, env and port mappings.
@@ -60,18 +70,6 @@ class MSSQLDB(ContainerManager):
             )
         ]
         ports = {'1433/tcp': self.config.port}
-
-        # If init script provided, copy to image via bind mount
-        if self.config.init_script is not None:
-            if not self.config.init_script.exists():
-                raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
-            mounts.append(
-                docker.types.Mount(
-                    target='/docker-entrypoint-initdb.d',
-                    source=str(self.config.init_script.parent.resolve()),
-                    type='bind',
-                    read_only=True,
-                ))
 
         try:
             container = self.client.containers.create(
@@ -108,8 +106,52 @@ class MSSQLDB(ContainerManager):
         if self.config.volume_path is not None:
             Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
         self._start_container()
-        self._test_connection()
         self._create_db(db_name, container=container)
+        self._test_connection()
+
+    def _execute_sql_script(self, script_path, db_name, verbose=True):
+        if not script_path or not script_path.exists():
+            if verbose:
+                print(f"Script not found: {script_path}")
+            return False
+
+        if verbose:
+            print(f"Executing SQL script: {script_path}")
+
+        try:
+            # Connect directly to the specified database
+            conn_string = self._get_conn_string(db_name)
+            conn = pyodbc.connect(conn_string)
+            conn.autocommit = True
+            cursor = conn.cursor()
+
+            # Read the script content
+            init_sql = script_path.read_text()
+            if verbose:
+                print(f"Script content preview: {init_sql[:150]}...")
+
+            # Split by GO statements (common in SQL Server scripts)
+            statements = [stmt.strip() for stmt in init_sql.split('GO') if stmt.strip()]
+
+            # Execute each statement
+            for i, statement in enumerate(statements):
+                if verbose:
+                    print(f"Executing statement {i+1}/{len(statements)}")
+                try:
+                    cursor.execute(statement)
+                except pyodbc.Error as e:
+                    print(f"Error executing statement {i+1}: {e}")
+                    print(f"Statement: {statement[:100]}...")
+
+            cursor.close()
+            conn.close()
+            if verbose:
+                print("SQL script executed successfully")
+            return True
+
+        except Exception as e:
+            print(f"Failed to execute SQL script: {e}")
+            return False
 
     def _create_db(
         self,
@@ -123,14 +165,10 @@ class MSSQLDB(ContainerManager):
 
         try:
             # Connect as SA (system admin) to create database and user
-            conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                           f"SERVER={self.config.host},{self.config.port};"
-                           f"UID=sa;"
-                           f"PWD={self.config.sa_password};"
-                           f"TrustServerCertificate=yes;"
-                           f"Connection Timeout=5;")
+            conn_string = self._get_conn_string()
 
             conn = pyodbc.connect(conn_string)
+            conn.autocommit = True
             cursor = conn.cursor()
 
             # Check if database exists
@@ -139,6 +177,7 @@ class MSSQLDB(ContainerManager):
 
             if not exists:
                 print(f"Creating database '{db_name}'...")
+
                 cursor.execute(f"CREATE DATABASE [{db_name}]")
 
                 # Check if user exists
@@ -161,10 +200,13 @@ class MSSQLDB(ContainerManager):
             cursor.close()
             conn.close()
 
-            # Mark the database as created
+            if self.config.init_script:
+                self._execute_sql_script(self.config.init_script, db_name)
+
+                # Mark the database as created
             self.database_created = True
 
-        except Error as e:
+        except OperationalError as e:
             raise RuntimeError(f"Failed to create database: {e}")
 
     def stop_db(self):
@@ -180,8 +222,6 @@ class MSSQLDB(ContainerManager):
         """
         Wait until MSSQL is accepting connections and ready.
         """
-
-        # Phase 1: wait for Docker container to be 'Running'
         try:
             container = container or self.client.containers.get(self.config.container_name)
             for _ in range(self.config.retries):
@@ -193,24 +233,22 @@ class MSSQLDB(ContainerManager):
         except (docker.errors.NotFound, docker.errors.APIError):
             pass
 
-        # Phase 2: wait for DB to be ready (accepting connections)
         for _ in range(self.config.retries):
             try:
                 # Try to connect to MSSQL server (not to a specific database)
-                conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                               f"SERVER={self.config.host},{self.config.port};"
-                               f"UID=sa;"
-                               f"PWD={self.config.sa_password};"
-                               f"TrustServerCertificate=yes;"
-                               f"Connection Timeout=5;")
+                conn_string = self._get_conn_string()
                 conn = pyodbc.connect(conn_string)
                 conn.close()
                 return True
-            except Error as e:
+            except OperationalError as e:
                 error_msg = str(e).lower()
-                # Handle common startup errors
-                if "connection failed" in error_msg or "server is not found or not accessible" in error_msg:
-                    # These errors indicate that the server is starting up
+                if "handshakes before login" in error_msg:
+                    pass
+                else:
+                    raise  # Unknown error — re-raise
+            except InterfaceError as e:
+                error_msg = str(e).lower()
+                if "login failed for user" in error_msg:
                     pass
                 else:
                     raise  # Unknown error — re-raise

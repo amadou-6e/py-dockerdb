@@ -385,6 +385,7 @@ def test_stop_and_remove_container(
     assert len(conts) == 0, "Container was not removed"
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_create_db(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,
@@ -408,6 +409,7 @@ def test_create_db(
     conn.close()
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_stop_db(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,
@@ -435,6 +437,7 @@ def test_stop_db(
     assert conts[0].status in ("exited", "created"), "Container did not stop"
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_delete_db(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,

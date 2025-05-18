@@ -405,6 +405,7 @@ def test_stop_and_remove_container(
     assert len(conts) == 0, "Container was not removed"
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_create_db(
     mysql_init_config: MySQLConfig,
     mysql_init_manager: MySQLDB,
@@ -427,6 +428,7 @@ def test_create_db(
     conn.close()
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_stop_db(
     mysql_init_config: MySQLConfig,
     mysql_init_manager: MySQLDB,
@@ -454,6 +456,7 @@ def test_stop_db(
     assert conts[0].status in ("exited", "created"), "Container did not stop"
 
 
+@pytest.mark.usefixtures("clear_port_1433")
 def test_delete_db(
     mysql_init_config: MySQLConfig,
     mysql_init_manager: MySQLDB,

@@ -105,8 +105,8 @@ class MySQLDB(ContainerManager):
         if self.config.volume_path is not None:
             Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
         self._start_container()
-        self._test_connection()
         self._create_db(db_name, container=container)
+        self._test_connection()
 
     def _create_db(
         self,
