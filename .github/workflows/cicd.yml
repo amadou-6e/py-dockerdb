@@ -23,6 +23,8 @@ jobs:
             py3-pip \
             py3-virtualenv \
             git \
+            g++ \
+            python3-dev \
             build-base \
             curl
 
