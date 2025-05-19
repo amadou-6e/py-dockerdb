@@ -21,7 +21,7 @@ from .utils import nuke_dir
 
 @pytest.fixture(scope="module")
 def dockerfile():
-    return Path(CONFIG_DIR, "mongodb", "Dockerfile.mongodb")
+    return Path(CONFIG_DIR, "mongodb", "Dockerfile.mongo")
 
 
 @pytest.fixture(scope="module")
@@ -63,12 +63,12 @@ def cleanup_temp_dir():
     Brutally clean TEMP_DIR before and after each test, cross-platform.
     """
 
-    nuke_dir()
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
     yield
 
-    nuke_dir()
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -430,32 +430,52 @@ def test_stop_and_remove_container(
 
 
 @pytest.mark.usefixtures("clear_port_27017")
+@pytest.mark.parametrize("docker_file_path", [
+    Path(CONFIG_DIR, "mongodb", "Dockerfile.mongo"),
+    None,
+])
+@pytest.mark.parametrize("init_script_path", [
+    Path(CONFIG_DIR, "mongodb", "mongo-init.js"),
+    None,
+])
+@pytest.mark.parametrize("image_name", [
+    "test-mongo-image",
+    "mongo:latest",
+    None,
+])
 def test_create_db(
-    mongodb_init_config: MongoDBConfig,
-    mongodb_init_manager: MongoDB,
+    image_name: str | None,
+    docker_file_path: Path | None,
+    init_script_path: Path | None,
 ):
-    mongodb_init_manager.create_db()
-    # Give MongoDB a moment to finish init
-    time.sleep(5)
-    # Now test with the regular user
-    user_client = MongoClient(
-        f"mongodb://{mongodb_init_config.user}:{mongodb_init_config.password}@"
-        f"{mongodb_init_config.host}:{mongodb_init_config.port}/{mongodb_init_config.database}?authSource=admin"
+    name = f"test-mongo-{uuid.uuid4().hex[:8]}"
+    config = MongoDBConfig(
+        user="testuser",
+        password="testpass",
+        root_username="root",
+        root_password="RootPass123!",
+        database="testdb",
+        project_name="itest",
+        dockerfile_path=docker_file_path,
+        init_script=init_script_path,
+        image_name=image_name,
+        workdir=TEMP_DIR,
+        container_name=name,
+        retries=20,
+        delay=5,
     )
+    manager = MongoDB(config)
+    manager.create_db()
+    time.sleep(5)
 
-    # Try to perform an operation to verify permissions
-    db = user_client[mongodb_init_config.database]
+    user_client = manager.connection
+    db = user_client[config.database]
     db.test_access.insert_one({"test": "access_verified"})
+    assert config.database in user_client.list_database_names()
 
-    # Check if database exists
-    databases = user_client.list_database_names()
-    assert mongodb_init_config.database in databases, f"Database {mongodb_init_config.database} was not created"
-
-    # If using init script, verify test collection
-    if mongodb_init_config.init_script:
-        db = user_client[mongodb_init_config.database]
-        assert "test_collection" in db.list_collection_names(
-        ), "Init script did not create test_collection"
+    if init_script_path is not None:
+        assert "test_collection" in db.list_collection_names(), \
+            "Init script did not create test_collection"
 
     user_client.close()
 

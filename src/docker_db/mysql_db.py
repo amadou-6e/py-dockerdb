@@ -40,10 +40,17 @@ class MySQLDB(ContainerManager):
             password=self.config.password,
             database=self.config.database if hasattr(self, 'database_created') else None)
 
-    def _create_container(self):
+    def _create_container(self, force: bool = False):
         """
         Create a new MySQL container with volume, env and port mappings.
         """
+        if self._is_container_created():
+            if force:
+                print(f"Container {self.config.container_name} already exists. Removing it.")
+                self._remove_container()
+            else:
+                print(f"Container {self.config.container_name} already exists.")
+                return
         env = {
             'MYSQL_USER': self.config.user,
             'MYSQL_PASSWORD': self.config.password,

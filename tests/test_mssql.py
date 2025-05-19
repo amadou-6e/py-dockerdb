@@ -13,6 +13,8 @@ from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
 from docker_db.mssql_db import MSSQLConfig, MSSQLDB
+# -- Tests --
+from .utils import nuke_dir
 
 
 @pytest.fixture(scope="module")
@@ -31,13 +33,11 @@ def init_script():
 @pytest.fixture(autouse=True)
 def cleanup_temp_dir():
     """Clean up vault files using OS-agnostic commands."""
-    cmd = f'rmdir /s /q "{TEMP_DIR}"' if platform.system() == "Windows" else f'rm -rf "{TEMP_DIR}"'
 
-    os.system(cmd)
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     yield
-    os.system(cmd)
-    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    nuke_dir(TEMP_DIR)
 
 
 # =======================================
@@ -308,20 +308,7 @@ def test_create_container_inspects_config(
     mounts = attrs["Mounts"]
     sources = {m["Source"] for m in mounts}
     assert str(mssql_init_config.volume_path.resolve()) in sources
-
-    # Extract the targets to verify the init script directory is mounted
-    # This is more reliable than checking the specific source path
-    targets = {m["Destination"] for m in mounts}
-    assert "/docker-entrypoint-initdb.d" in targets
-
-    # Instead of checking the exact path match, verify the mount is present
-    init_script_mount = None
-    for mount in mounts:
-        if mount["Destination"] == "/docker-entrypoint-initdb.d":
-            init_script_mount = mount
-            break
-
-    assert init_script_mount is not None, "Init script directory not mounted"
+    # There is not init script mount, as we execute the script manually
 
     # 3) check port binding
     bindings = attrs["HostConfig"]["PortBindings"]
@@ -347,21 +334,23 @@ def test_container_start_and_connect(
     # Ensure container starts and database is reachable
     Path(mssql_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mssql_init_manager._start_container(mssql_init_container)
-    mssql_init_manager._test_connection()
 
     time.sleep(5)
 
+    # Reaching in admin mode, since the user is only created when running _create_db
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
                    f"UID=sa;"
                    f"PWD={mssql_init_config.sa_password};"
-                   f"DATABASE={mssql_init_config.database};")
+                   f"TrustServerCertificate=yes;"
+                   f"Connection Timeout=10;")
 
     conn = pyodbc.connect(conn_string)
     cursor = conn.cursor()
     cursor.execute("SELECT OBJECT_ID('test_table')")
     result = cursor.fetchone()
-    assert result[0] is not None, "Init script did not create test_table"
+    assert result[0] is None, "Command failed, should be None, since init script not run"
+
     conn.close()
 
 
@@ -374,16 +363,16 @@ def test_stop_and_remove_container(
     # Ensure container starts and database is reachable
     Path(mssql_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mssql_init_manager._start_container(mssql_init_container)
-    mssql_init_manager._test_connection()
 
     # Give SQL Server a moment to finish init
     time.sleep(5)
 
     conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                    f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
-                   f"UID={mssql_init_config.user};"
-                   f"PWD={mssql_init_config.password};"
-                   f"DATABASE={mssql_init_config.database};")
+                   f"UID=sa;"
+                   f"PWD={mssql_init_config.sa_password};"
+                   f"TrustServerCertificate=yes;"
+                   f"Connection Timeout=10;")
 
     conn = pyodbc.connect(conn_string)
 
@@ -407,25 +396,53 @@ def test_stop_and_remove_container(
 
 
 @pytest.mark.usefixtures("clear_port_1433")
+@pytest.mark.parametrize("docker_file_path", [
+    Path(CONFIG_DIR, "mssql", "Dockerfile.mssql"),
+    None,
+])
+@pytest.mark.parametrize("init_script_path", [
+    Path(CONFIG_DIR, "mssql", "initdb.sql"),
+    None,
+])
+@pytest.mark.parametrize("image_name", [
+    "test-mssql-image",
+    "mcr.microsoft.com/mssql/server:2017-latest",
+    "mcr.microsoft.com/azure-sql-edge:latest",
+    None,
+])
 def test_create_db(
+    image_name: str,
+    docker_file_path: Path | None,
+    init_script_path: Path | None,
+    mssql_init_image: Image,
     mssql_init_config: MSSQLConfig,
-    mssql_init_manager: MSSQLDB,
 ):
-    mssql_init_manager.create_db()
+    name = f"test-mssql-{uuid.uuid4().hex[:8]}"
+    config = MSSQLConfig(
+        user="testuser",
+        password="TestPass123!",  # SQL Server requires complex passwords
+        database="testdb",
+        sa_password="StrongSaPass123!",  # SQL Server specific
+        project_name="itest",
+        dockerfile_path=docker_file_path,
+        init_script=init_script_path,
+        image_name=image_name,
+        workdir=TEMP_DIR,
+        container_name=name,
+        retries=20,
+        delay=5,
+    )
+    manager = MSSQLDB(config)
+    manager.create_db()
     # Give SQL Server a moment to finish init
     time.sleep(5)
 
-    conn_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                   f"SERVER={mssql_init_config.host},{mssql_init_config.port};"
-                   f"UID=sa;"
-                   f"PWD={mssql_init_config.sa_password};"
-                   f"DATABASE={mssql_init_config.database};")
-
-    conn = pyodbc.connect(conn_string)
+    conn = manager.connection
     cursor = conn.cursor()
-    cursor.execute("SELECT OBJECT_ID('test_table')")
-    result = cursor.fetchone()
-    assert result[0] is not None, "Init script did not create test_table"
+    if init_script_path is not None:
+        cursor.execute("SELECT OBJECT_ID('test_table')")
+        result = cursor.fetchone()
+        assert result[0] is not None, "Init script did not create test_table"
     conn.close()
 
 

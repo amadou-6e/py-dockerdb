@@ -1,0 +1,36 @@
+name: Docker Outside Docker Tests
+
+on: [push, pull_request]
+
+jobs:
+  docker-outside-docker:
+    runs-on: ubuntu-latest
+
+    container: 
+      image: python:3.10-slim
+      options: --privileged -v /var/run/docker.sock:/var/run/docker.sock
+
+    steps:
+      - name: Install Docker CLI
+        run: |
+          apt-get update
+          apt-get install -y docker.io
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_mongodb.py
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_mssql.py
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_postgres.py
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_mysql.py

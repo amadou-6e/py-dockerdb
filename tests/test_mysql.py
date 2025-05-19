@@ -13,6 +13,8 @@ from docker.models.images import Image
 from tests.conftest import *
 # -- Ours --
 from docker_db.mysql_db import MySQLConfig, MySQLDB
+# -- Tests --
+from tests.utils import nuke_dir
 
 
 @pytest.fixture(scope="module")
@@ -31,12 +33,10 @@ def init_script():
 @pytest.fixture(autouse=True)
 def cleanup_temp_dir():
     """Clean up vault files using OS-agnostic commands."""
-    cmd = f'rmdir /s /q "{TEMP_DIR}"' if platform.system() == "Windows" else f'rm -rf "{TEMP_DIR}"'
-
-    os.system(cmd)
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     yield
-    os.system(cmd)
+    nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -160,8 +160,9 @@ def remove_test_image(mysql_config: MySQLConfig):
 def mysql_container(
     mysql_manager: MySQLDB,
     mysql_image: Image,
+    cleanup_temp_dir,
 ):
-    container = mysql_manager._create_container()
+    container = mysql_manager._create_container(force=True)
     return container
 
 
@@ -169,8 +170,9 @@ def mysql_container(
 def mysql_init_container(
     mysql_init_manager: MySQLDB,
     mysql_init_image: Image,
+    cleanup_temp_dir,
 ):
-    container = mysql_init_manager._create_container()
+    container = mysql_init_manager._create_container(force=True)
     return container
 
 
@@ -405,30 +407,56 @@ def test_stop_and_remove_container(
     assert len(conts) == 0, "Container was not removed"
 
 
-@pytest.mark.usefixtures("clear_port_1433")
+@pytest.mark.usefixtures("clear_port_3306")
+@pytest.mark.parametrize("docker_file_path", [
+    Path(CONFIG_DIR, "mysql", "Dockerfile.mysql"),
+    None,
+])
+@pytest.mark.parametrize("init_script_path", [
+    Path(CONFIG_DIR, "mysql", "initdb.sql"),
+    None,
+])
+@pytest.mark.parametrize("image_name", [
+    "test-mysql-image",
+    "mysql:latest",
+    "mariadb:latest",
+    None,
+])
 def test_create_db(
-    mysql_init_config: MySQLConfig,
-    mysql_init_manager: MySQLDB,
+    docker_file_path: Path | None,
+    init_script_path: Path | None,
+    image_name: str | None,
 ):
-    mysql_init_manager.create_db()
-    # Give MySQL a moment to finish init
+    name = f"test-mysql-{uuid.uuid4().hex[:8]}"
+    config = MySQLConfig(
+        user="testuser",
+        password="testpass",
+        database="testdb",
+        project_name="itest",
+        dockerfile_path=docker_file_path,
+        init_script=init_script_path,
+        image_name=image_name,
+        workdir=TEMP_DIR,
+        container_name=name,
+        retries=20,
+        delay=5,
+    )
+    manager = MySQLDB(config)
+    manager.create_db()
     time.sleep(5)
 
-    conn = mysql.connector.connect(
-        host=mysql_init_config.host,
-        port=mysql_init_config.port,
-        user="root",  # Use root to check if tables exist
-        password=mysql_init_config.root_password,
-        database=mysql_init_config.database,
-    )
-    cur = conn.cursor()
-    cur.execute("SHOW TABLES LIKE 'test_table';")
-    result = cur.fetchone()
-    assert result is not None, "Init script did not create test_table"
+    conn = manager.connection
+    cursor = conn.cursor()
+
+    if init_script_path is not None:
+        cursor.execute("SHOW TABLES LIKE 'test_table';")
+        result = cursor.fetchone()
+        assert result is not None, "Init script did not create test_table"
+
     conn.close()
 
 
-@pytest.mark.usefixtures("clear_port_1433")
+@pytest.mark.usefixtures("clear_port_3306")
 def test_stop_db(
     mysql_init_config: MySQLConfig,
     mysql_init_manager: MySQLDB,
@@ -456,7 +484,7 @@ def test_stop_db(
     assert conts[0].status in ("exited", "created"), "Container did not stop"
 
 
-@pytest.mark.usefixtures("clear_port_1433")
+@pytest.mark.usefixtures("clear_port_3306")
 def test_delete_db(
     mysql_init_config: MySQLConfig,
     mysql_init_manager: MySQLDB,

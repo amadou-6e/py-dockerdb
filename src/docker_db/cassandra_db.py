@@ -53,10 +53,17 @@ class Cassandra(ContainerManager):
 
         return PlainTextAuthProvider(username=username, password=password)
 
-    def _create_container(self):
+    def _create_container(self, force=False):
         """
         Create a new Cassandra container with volume, env and port mappings.
         """
+        if self._is_container_created():
+            if force:
+                print(f"Container {self.config.container_name} already exists. Removing it.")
+                self._remove_container()
+            else:
+                print(f"Container {self.config.container_name} already exists.")
+                return
         env = {
             'CASSANDRA_START_RPC': 'true',
             'CASSANDRA_CLUSTER_NAME': 'TestCluster',

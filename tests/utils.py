@@ -1,5 +1,6 @@
 import os
 import shutil
+import platform
 from pathlib import Path
 
 
@@ -18,3 +19,5 @@ def nuke_dir(path: Path):
                 except Exception:
                     pass
         shutil.rmtree(path, ignore_errors=True)
+        cmd = f'rmdir /s /q "{path}"' if platform.system() == "Windows" else f'rm -rf "{path}"'
+        os.system(cmd)

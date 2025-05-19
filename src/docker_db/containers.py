@@ -23,6 +23,15 @@ SHORTHAND_MAP = {
     "cassandra": "cs",
 }
 
+DEFAULT_IMAGE_MAP = {
+    "postgres": "postgres:16",
+    "mysql": "mysql:8",
+    "mariadb": "mariadb:10",
+    "mssql": "mcr.microsoft.com/mssql/server:2022-latest",
+    "mongodb": "mongo:6",
+    "cassandra": "cassandra:4",
+}
+
 
 class ContainerConfig(BaseModel):
     """
@@ -68,7 +77,7 @@ class ContainerConfig(BaseModel):
 
     def model_post_init(self, __context__):
         self.workdir = self.workdir or Path(os.getenv("WORKDIR", os.getcwd()))
-        self.image_name = self.image_name or f"{self.project_name}-{self._type}:dev"
+        self.image_name = self.image_name or DEFAULT_IMAGE_MAP[self._type]
         self.container_name = self.container_name or f"{self.project_name}-{self._type}"
         self.dockerfile_path = (self.dockerfile_path or
                                 Path(self.workdir, "docker", "Dockerfile.pgdb"))
@@ -160,6 +169,54 @@ class ContainerManager:
             raise ConnectionError(
                 f"Could not connect to Docker daemon at {docker_base_url}. Error: {str(e)}") from e
         return True
+
+    def _is_container_created(self, container_name: str | None = None) -> bool:
+        """
+        Check if a container with the given name exists.
+        
+        Parameters
+        ----------
+        container_name : str, optional
+            Name of the container to check, defaults to config.container_name
+        
+        Returns
+        -------
+        bool
+            True if the container exists, False otherwise
+        """
+        container_name = container_name or self.config.container_name
+        try:
+            self.client.containers.get(container_name)
+            return True
+        except NotFound:
+            return False
+
+    def _remove_image(self, image_name: str | None = None):
+        """
+        Remove the custom Docker image if it exists.
+
+        Uses the Docker SDK to remove the image specified in the configuration.
+
+        Raises
+        ------
+        RuntimeError
+            If image removal fails
+        """
+        try:
+            images = image_name or self.client.images.list(name=self.config.image_name)
+        except docker.errors.APIError as e:
+            raise RuntimeError("Failed to list Docker images") from e
+
+        if not images:
+            print(f"No image found with name {self.config.image_name}")
+            return
+
+        for image in images:
+            try:
+                print(f"Removing image {image.id} ({self.config.image_name})...")
+                self.client.images.remove(image.id, force=True)
+            except docker.errors.APIError as e:
+                raise RuntimeError(f"Failed to remove image {image.id}") from e
 
     def _build_image(self):
         """

@@ -426,18 +426,11 @@ def test_create_db(
     # Give Postgres a moment to finish init
     time.sleep(2)
 
-    conn = psycopg2.connect(
-        host=postgres_init_config.host,
-        port=postgres_init_config.port,
-        database=postgres_init_config.user,  # postgres_init_config.database,
-        user=postgres_init_config.user,
-        password=postgres_init_config.password,
-        cursor_factory=RealDictCursor,
-    )
-    cur = conn.cursor()
+    conn = manager.connection
+    cursor = conn.cursor()
     if init_script_path is not None:
-        cur.execute("SELECT tablename FROM pg_tables WHERE tablename='test_table';")
-        result = cur.fetchone()
+        cursor.execute("SELECT tablename FROM pg_tables WHERE tablename='test_table';")
+        result = cursor.fetchone()
         assert result is not None, "Init script did not create test_table"
     conn.close()
 

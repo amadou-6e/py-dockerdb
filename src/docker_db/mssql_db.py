@@ -36,7 +36,9 @@ class MSSQLDB(ContainerManager):
         connection_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                              f"SERVER={self.config.host},{self.config.port};"
                              f"UID={self.config.user};"
-                             f"PWD={self.config.password};")
+                             f"PWD={self.config.password};"
+                             f"TrustServerCertificate=yes;"
+                             f"Connection Timeout=10;")
 
         if hasattr(self, 'database_created'):
             connection_string += f"DATABASE={self.config.database};"
@@ -53,10 +55,17 @@ class MSSQLDB(ContainerManager):
         conn_string += f"DATABASE={db_name};" if db_name else ""
         return conn_string
 
-    def _create_container(self):
+    def _create_container(self, force: bool = False):
         """
         Create a new MSSQL container with volume, env and port mappings.
         """
+        if self._is_container_created():
+            if force:
+                print(f"Container {self.config.container_name} already exists. Removing it.")
+                self._remove_container()
+            else:
+                print(f"Container {self.config.container_name} already exists.")
+                return
         env = {
             'ACCEPT_EULA': 'Y',
             'SA_PASSWORD': self.config.sa_password,
@@ -243,6 +252,8 @@ class MSSQLDB(ContainerManager):
             except OperationalError as e:
                 error_msg = str(e).lower()
                 if "handshakes before login" in error_msg:
+                    pass
+                elif "communication link failure " in error_msg:
                     pass
                 else:
                     raise  # Unknown error — re-raise

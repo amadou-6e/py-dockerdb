@@ -42,10 +42,17 @@ class PostgresDB(ContainerManager):
             cursor_factory=RealDictCursor,
         )
 
-    def _create_container(self):
+    def _create_container(self, force: bool = False):
         """
         Create a new Postgres container with volume, env and port mappings.
         """
+        if self._is_container_created():
+            if force:
+                print(f"Container {self.config.container_name} already exists. Removing it.")
+                self._remove_container()
+            else:
+                print(f"Container {self.config.container_name} already exists.")
+                return
         env = {
             'POSTGRES_USER': self.config.user,
             'POSTGRES_PASSWORD': self.config.password,

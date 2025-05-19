@@ -51,15 +51,22 @@ class MongoDB(ContainerManager):
                 f"{self.config.host}:{self.config.port}/"
                 f"{db_name}?authSource=admin")
 
-    def _create_container(self):
+    def _create_container(self, force: bool = False):
         """
         Create a new MongoDB container with volume, env and port mappings.
         """
+        if self._is_container_created():
+            if force:
+                print(f"Container {self.config.container_name} already exists. Removing it.")
+                self._remove_container()
+            else:
+                print(f"Container {self.config.container_name} already exists.")
+                return
         env = {
             'MONGO_INITDB_ROOT_USERNAME': self.config.root_username,
             'MONGO_INITDB_ROOT_PASSWORD': self.config.root_password,
         }
-        '''
+
         mounts = [
             docker.types.Mount(
                 target='/data/db',
@@ -67,15 +74,17 @@ class MongoDB(ContainerManager):
                 type='bind',
             )
         ]
-        '''
-        mounts = [
-            docker.types.Mount(
-                target='/docker-entrypoint-initdb.d/',
-                source=str(Path(self.config.init_script).parent),
-                type='bind',
-            )
-        ]
         ports = {'27017/tcp': self.config.port}
+
+        if self.config.init_script is not None:
+            if not self.config.init_script.exists():
+                raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
+            mounts.append(
+                docker.types.Mount(
+                    target='/docker-entrypoint-initdb.d/',
+                    source=str(Path(self.config.init_script).parent),
+                    type='bind',
+                ))
 
         try:
             container = self.client.containers.create(
