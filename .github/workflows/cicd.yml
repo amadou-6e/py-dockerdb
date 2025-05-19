@@ -19,12 +19,11 @@ jobs:
           apk update
           apk add --no-cache python3 py3-pip build-base
 
-      - name: Install Python dependencies
-        run: pip install --no-cache-dir -r requirements.txt
-        
-      - name: Install dependencies
+      - name: Create and activate virtualenv, install deps
         run: |
-          pip install -r requirements.txt
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install --no-cache-dir -r requirements.txt
 
       - name: Run Pytest with Docker SDK
         run: pytest tests/test_mongodb.py
