@@ -1,56 +1,38 @@
-name: Docker-in-Docker Tests
+name: Docker Outside Docker Tests
 
 on: [push, pull_request]
 
 jobs:
-  docker-tests:
+  build:
     runs-on: ubuntu-latest
 
+    # 1) Run the steps themselves inside the official Docker CLI container
     container:
-      image: docker:24.0.5-dind
-      options: --privileged  # Required for Docker daemon
+      image: docker:stable
+      options: --privileged
 
+    # 2) Spin up a Docker-in-Docker daemon as a service
     services:
       docker:
-        image: docker:24.0.5-dind
-        options: --privileged --shm-size=2g
+        image: docker:stable-dind     # or pin to a specific version
+        options: >-
+          --privileged
+          -v /github/workspace:/github/workspace
+
+    # 3) Point the CLI to the daemon
+    env:
+      DOCKER_HOST: tcp://docker:2375
+      DOCKER_TLS_CERTDIR: ""
 
     steps:
-      - name: Install dependencies
+      - uses: actions/checkout@v4
+      - name: Prepare test directory
         run: |
-          apk add --no-cache \
-            python3 \
-            py3-pip \
-            py3-virtualenv \
-            git \
-            g++ \
-            python3-dev \
-            libffi-dev \
-            openssl-dev \
-            unixodbc-dev \
-            build-base \
-            curl
+          mkdir -p mydir
+          echo "Hello from the job container!" > mydir/hello.txt
 
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up virtualenv
+      - name: Run container AND mount that job-container path
         run: |
-          python3 -m venv venv
-          . venv/bin/activate
-          pip install -r requirements.txt -r etc/dev_requirements.txt
-
-      - name: Prepare mount dir
-        run: mkdir -p /data/tmp/mgdata
-
-      - name: Start Docker daemon
-        run: |
-          dockerd-entrypoint.sh &
-
-          # Wait for daemon to be ready
-          timeout 30 sh -c 'until docker info; do sleep 1; done'
-
-      - name: Run Pytest (Docker SDK)
-        run: |
-          . venv/bin/activate
-          pytest tests/test_mongodb.py
+          docker run --rm \
+            -v /github/workspace/mydir:/data \
+            busybox cat /data/hello.txt

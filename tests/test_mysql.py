@@ -56,7 +56,7 @@ def mysql_config() -> MySQLConfig:
         user="testuser",
         password="testpass",
         database="testdb",
-        root_password="rootpass",  # MySQL specific
+        root_password="rootpass",
         project_name="itest",
         workdir=TEMP_DIR,
         container_name=name,
@@ -80,7 +80,7 @@ def mysql_init_config(
         user="testuser",
         password="testpass",
         database="testdb",
-        root_password="rootpass",  # MySQL specific
+        root_password="rootpass",
         project_name="itest",
         workdir=TEMP_DIR,
         init_script=init_script,
@@ -230,7 +230,7 @@ def cleanup_test_containers():
 
 @pytest.fixture
 def clear_port_3306():
-    clear_port(3306, "test-mssql")
+    clear_port(3306, "test-mysql")
 
 
 @pytest.mark.usefixtures("remove_test_image")
@@ -424,6 +424,7 @@ def test_create_db(
         password="testpass",
         database="testdb",
         project_name="itest",
+        root_password="rootpass",
         dockerfile_path=docker_file_path,
         init_script=init_script_path,
         image_name=image_name,
