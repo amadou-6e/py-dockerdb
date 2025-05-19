@@ -6,9 +6,9 @@ jobs:
   docker-outside-docker:
     runs-on: ubuntu-latest
 
-    container: 
-      image: python:3.10-slim
-      options: --privileged -v /var/run/docker.sock:/var/run/docker.sock
+    container:
+      image: docker:dind
+      options: --privileged
 
     steps:
       - name: Install Docker CLI

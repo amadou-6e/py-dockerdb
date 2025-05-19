@@ -14,7 +14,6 @@ from tests.conftest import *
 # -- Ours --
 from docker_db.mssql_db import MSSQLConfig, MSSQLDB
 # -- Tests --
-from .utils import nuke_dir
 from .utils import nuke_dir, clear_port
 
 
@@ -229,16 +228,7 @@ def cleanup_test_containers():
 
 @pytest.fixture
 def clear_port_1433():
-    client = docker.from_env()
-
-    for container in client.containers.list():
-        container.reload()
-        name = container.name
-        ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
-
-        if name.startswith("test-mssql") and "1433/tcp" in ports:
-            print(f"Stopping container: {name}")
-            container.stop()
+    clear_port(1433, "test-mssql")
 
 
 @pytest.mark.usefixtures("remove_test_image")
