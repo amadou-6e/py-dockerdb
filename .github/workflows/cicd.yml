@@ -14,10 +14,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install Python, pip, and system deps
+      - name: Install system dependencies
         run: |
-          apk update
-          apk add --no-cache python3 py3-pip build-base
+          apk update && apk add --no-cache \
+            python3 \
+            py3-pip \
+            python3-dev \
+            build-base \
+            g++ \
+            musl-dev \
+            unixodbc-dev \
+            libffi-dev \
+            openssl-dev
 
       - name: Create and activate virtualenv, install deps
         run: |
