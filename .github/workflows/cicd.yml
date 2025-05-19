@@ -22,16 +22,17 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          apt-get update && apt-get install \
+          apt-get update && apt-get install -y \
             python3 \
-            py3-pip \
+            python3-pip \
             python3-dev \
-            build-base \
+            build-essential \
             g++ \
-            musl-dev \
             unixodbc-dev \
             libffi-dev \
-            openssl-dev
+            libssl-dev \
+            curl \
+            git 
 
       - name: Create and activate virtualenv, install deps
         run: |
