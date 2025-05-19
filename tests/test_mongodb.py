@@ -16,7 +16,7 @@ from tests.conftest import *
 # -- Ours --
 from docker_db.mongo_db import MongoDBConfig, MongoDB
 # -- Tests --
-from .utils import nuke_dir
+from .utils import nuke_dir, clear_port
 
 
 @pytest.fixture(scope="module")
@@ -239,16 +239,7 @@ def create_test_image(
 
 @pytest.fixture
 def clear_port_27017():
-    client = docker.from_env()
-
-    for container in client.containers.list():
-        container.reload()
-        name = container.name
-        ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
-
-        if name.startswith("test-mongodb") and "27017/tcp" in ports:
-            print(f"Stopping container: {name}")
-            container.stop()
+    clear_port(27017, "test-mongodb")
 
 
 @pytest.mark.usefixtures("remove_test_image")
@@ -451,7 +442,7 @@ def test_create_db(
     name = f"test-mongo-{uuid.uuid4().hex[:8]}"
     config = MongoDBConfig(
         user="testuser",
-        password="testpass",
+        password="TestPass123!",
         root_username="root",
         root_password="RootPass123!",
         database="testdb",
@@ -470,6 +461,7 @@ def test_create_db(
 
     user_client = manager.connection
     db = user_client[config.database]
+
     db.test_access.insert_one({"test": "access_verified"})
     assert config.database in user_client.list_database_names()
 

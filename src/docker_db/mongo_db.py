@@ -14,8 +14,9 @@ class MongoDBConfig(ContainerConfig):
     user: str
     password: str
     database: str
-    root_username: str  # Similar to sa_user in MSSQL
-    root_password: str  # Similar to sa_password in MSSQL
+    port: int = 27017
+    root_username: str
+    root_password: str
     _type: str = "mongodb"
 
 
@@ -34,11 +35,10 @@ class MongoDB(ContainerManager):
         """
         Establish a new MongoDB connection.
         """
+        db_name = self.config.database or "admin"
         connection_string = (f"mongodb://{self.config.user}:{self.config.password}@"
-                             f"{self.config.host}:{self.config.port}/")
-
-        if hasattr(self, 'database_created'):
-            connection_string += f"{self.config.database}"
+                             f"{self.config.host}:{self.config.port}/"
+                             f"{db_name}?authSource=admin")
 
         return MongoClient(connection_string)
 
@@ -126,6 +126,7 @@ class MongoDB(ContainerManager):
         db_name: str = None,
         container: Container = None,
     ):
+        db_name = db_name or self.config.database
         container = container or self.client.containers.get(self.config.container_name)
         container.reload()
         if not container.attrs.get("State", {}).get("Running", False):

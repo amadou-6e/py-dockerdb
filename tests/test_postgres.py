@@ -15,7 +15,7 @@ from tests.conftest import *
 # -- Ours --
 from docker_db.postgres_db import PostgresConfig, PostgresDB
 # -- Tests --
-from .utils import nuke_dir
+from .utils import nuke_dir, clear_port
 
 
 @pytest.fixture(scope="module")
@@ -220,16 +220,7 @@ def test_docker_running(postgres_manager: PostgresDB):
 
 @pytest.fixture
 def clear_port_5432():
-    client = docker.from_env()
-
-    for container in client.containers.list():
-        container.reload()
-        name = container.name
-        ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
-
-        if name.startswith("test-postgres") and "5432/tcp" in ports:
-            print(f"Stopping container: {name}")
-            container.stop()
+    clear_port(5432, "test-postgres")
 
 
 @pytest.mark.usefixtures("remove_test_image")

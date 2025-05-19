@@ -1,4 +1,36 @@
-import os
+"""
+PostgreSQL container management module.
+
+This module provides classes to manage PostgreSQL database containers using Docker.
+It enables developers to easily create, configure, start, stop, and delete PostgreSQL
+containers for development and testing purposes.
+
+The module defines two main classes:
+- PostgresConfig: Configuration settings for PostgreSQL containers
+- PostgresDB: Manager for PostgreSQL container lifecycle
+
+Examples
+--------
+>>> from docker_db.postgres import PostgresConfig, PostgresDB
+>>> config = PostgresConfig(
+...     user="testuser",
+...     password="testpass",
+...     database="testdb",
+...     container_name="test-postgres"
+... )
+>>> db = PostgresDB(config)
+>>> db.create_db()
+>>> # Connect to the database
+>>> conn = db.connection
+>>> # Create a cursor and execute a query
+>>> cursor = conn.cursor()
+>>> cursor.execute("SELECT version();")
+>>> version = cursor.fetchone()
+>>> print(f"PostgreSQL version: {version[0]}")
+>>> # Clean up
+>>> cursor.close()
+>>> db.stop_db()
+"""
 import psycopg2
 import time
 import docker
@@ -13,18 +45,85 @@ from docker_db.containers import ContainerConfig, ContainerManager
 
 
 class PostgresConfig(ContainerConfig):
+    """
+    Configuration for PostgreSQL container.
+    
+    This class extends ContainerConfig with PostgreSQL-specific configuration options.
+    It provides the necessary settings to create and connect to a PostgreSQL database
+    running in a Docker container.
+    
+    Parameters
+    ----------
+    user : str
+        PostgreSQL username for authentication.
+    password : str
+        PostgreSQL password for authentication.
+    database : str
+        Name of the default database to create.
+    port : int, optional
+        Port on which PostgreSQL will listen, by default 5432.
+    
+    Attributes
+    ----------
+    user : str
+        PostgreSQL username.
+    password : str
+        PostgreSQL password.
+    database : str
+        Name of the default database.
+    port : int
+        Port mapping for PostgreSQL service (host:container).
+    _type : str
+        Type identifier, set to "postgres".
+        
+    Notes
+    -----
+    This class inherits additional container configuration parameters from
+    the parent ContainerConfig class, such as container_name, image_name,
+    volume_path, etc.
+    """
     user: str
     password: str
     database: str
+    port: int = 5432
     _type: str = "postgres"
 
 
 class PostgresDB(ContainerManager):
     """
     Manages lifecycle of a Postgres container via Docker SDK.
+
+    This class provides functionality to create, start, stop, and delete PostgreSQL 
+    containers using the Docker SDK. It also handles database creation and connection
+    management.
+
+    Parameters
+    ----------
+    config : PostgresConfig
+        Configuration object containing PostgreSQL and container settings.
+
+    Attributes
+    ----------
+    config : PostgresConfig
+        The configuration object for this PostgreSQL instance.
+    client : docker.client.DockerClient
+        Docker client for interacting with the Docker daemon.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: PostgresConfig):
+        """
+        Initialize PostgresDB with the provided configuration.
+
+        Parameters
+        ----------
+        config : PostgresConfig
+            Configuration object containing PostgreSQL and container settings.
+
+        Raises
+        ------
+        AssertionError
+            If Docker is not running.
+        """
         self.config: PostgresConfig = config
         assert self._is_docker_running()
         self.client = docker.from_env()
@@ -32,7 +131,16 @@ class PostgresDB(ContainerManager):
     @property
     def connection(self):
         """
-        Establish a new psycopg2 connection.
+        Establish a new psycopg2 connection to the PostgreSQL database.
+
+        Returns
+        -------
+        connection : psycopg2.extensions.connection
+            A new connection to the PostgreSQL database with RealDictCursor factory.
+
+        Notes
+        -----
+        This creates a new connection each time it's called.
         """
         return psycopg2.connect(
             host=self.config.host,
@@ -45,6 +153,25 @@ class PostgresDB(ContainerManager):
     def _create_container(self, force: bool = False):
         """
         Create a new Postgres container with volume, env and port mappings.
+
+        Parameters
+        ----------
+        force : bool, optional
+            If True, remove existing container with the same name before creating
+            a new one, by default False.
+
+        Returns
+        -------
+        container : docker.models.containers.Container or None
+            The created container object, or None if container already exists and
+            force is False.
+
+        Raises
+        ------
+        FileNotFoundError
+            If an init script is specified but does not exist.
+        RuntimeError
+            If container creation fails.
         """
         if self._is_container_created():
             if force:
@@ -100,9 +227,27 @@ class PostgresDB(ContainerManager):
 
     def create_db(
         self,
-        db_name: str = None,
-        container: Container = None,
+        db_name: str | None = None,
+        container: Container | None = None,
     ):
+        """
+        Create a new PostgreSQL database and ensure container is running.
+
+        This method builds the Docker image if needed, creates and starts the container,
+        creates the specified database, and tests the connection.
+
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to create, defaults to self.config.database if None.
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+
+        Raises
+        ------
+        RuntimeError
+            If container creation, database creation, or connection test fails.
+        """
         # Ensure container is running
         db_name = db_name or self.config.database
         self._build_image()
@@ -115,9 +260,24 @@ class PostgresDB(ContainerManager):
 
     def _create_db(
         self,
-        db_name: str = None,
-        container: Container = None,
+        db_name: str | None = None,
+        container: Container | None = None,
     ):
+        """
+        Create a database in the running PostgreSQL container.
+
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to create, defaults to self.config.database if None.
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+
+        Raises
+        ------
+        RuntimeError
+            If the container is not running or database creation fails.
+        """
         container = container or self.client.containers.get(self.config.container_name)
         container.reload()
         if not container.attrs.get("State", {}).get("Running", False):
@@ -140,17 +300,46 @@ class PostgresDB(ContainerManager):
             raise RuntimeError(f"Failed to create database: {e}")
 
     def stop_db(self):
+        """
+        Stop the PostgreSQL container.
+
+        This method stops the container and prints its state.
+        """
         # Stop container
         self._stop_container()
         self._container_state()
 
     def delete_db(self):
+        """
+        Delete the PostgreSQL container.
+
+        This method removes the container completely.
+        """
         # Remove container
         self._remove_container()
 
-    def wait_for_db(self, container=None) -> bool:
+    def wait_for_db(self, container: Container | None = None) -> bool:
         """
         Wait until PostgreSQL is accepting connections and ready.
+
+        This method has two phases:
+        1. Wait for Docker container to be in 'Running' state
+        2. Wait for PostgreSQL to be ready to accept connections
+
+        Parameters
+        ----------
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+
+        Returns
+        -------
+        bool
+            True if database is ready, False if timeout was reached.
+
+        Raises
+        ------
+        OperationalError
+            If an unexpected database connection error occurs.
         """
 
         # Phase 1: wait for Docker container to be 'Running'

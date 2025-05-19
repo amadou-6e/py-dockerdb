@@ -63,7 +63,7 @@ class ContainerConfig(BaseModel):
         Delay in seconds between retry attempts
     """
     host: str = "localhost"
-    port: int = 5432
+    port: int | None = None
     project_name: str = "docker_db"
     image_name: str | None = None
     container_name: str | None = None
@@ -84,6 +84,9 @@ class ContainerConfig(BaseModel):
         self.volume_path = (self.volume_path or
                             Path(self.workdir, f"{SHORTHAND_MAP[self._type]}data"))
         self.volume_path.mkdir(parents=True, exist_ok=True)
+        if self.port is None:
+            raise ValueError(
+                "Port must be specified. Use the 'port' parameter in the configuration.")
 
 
 class ContainerManager:

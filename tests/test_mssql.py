@@ -15,6 +15,7 @@ from tests.conftest import *
 from docker_db.mssql_db import MSSQLConfig, MSSQLDB
 # -- Tests --
 from .utils import nuke_dir
+from .utils import nuke_dir, clear_port
 
 
 @pytest.fixture(scope="module")

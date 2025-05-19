@@ -15,6 +15,7 @@ class MySQLConfig(ContainerConfig):
     password: str
     database: str
     root_password: str
+    port: int = 3306
     _type: str = "mysql"
 
 

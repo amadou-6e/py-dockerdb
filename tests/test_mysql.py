@@ -14,7 +14,7 @@ from tests.conftest import *
 # -- Ours --
 from docker_db.mysql_db import MySQLConfig, MySQLDB
 # -- Tests --
-from tests.utils import nuke_dir
+from .utils import nuke_dir, clear_port
 
 
 @pytest.fixture(scope="module")
@@ -230,16 +230,7 @@ def cleanup_test_containers():
 
 @pytest.fixture
 def clear_port_3306():
-    client = docker.from_env()
-
-    for container in client.containers.list():
-        container.reload()
-        name = container.name
-        ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
-
-        if name.startswith("test-mysql") and "3306/tcp" in ports:
-            print(f"Stopping container: {name}")
-            container.stop()
+    clear_port(3306, "test-mssql")
 
 
 @pytest.mark.usefixtures("remove_test_image")
