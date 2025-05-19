@@ -17,19 +17,23 @@ jobs:
         image: docker:stable-dind     # or pin to a specific version
         options: >-
           --privileged
-          -v /github/workspace:/github/workspace
+          -v /github/workspace:/workspace
         volumes:
           - /var/run/docker.sock:/var/run/docker.sock:ro
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Prepare test directory
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create test file in the job container
         run: |
           mkdir -p mydir
           echo "Hello from the job container!" > mydir/hello.txt
 
-      - name: Run container AND mount that job-container path
+      - name: Verify mount from DinD
         run: |
+          # mount from the dind container’s /workspace 
+          # into our new busybox container’s /data
           docker run --rm \
-            -v /github/workspace/mydir:/data \
+            -v /workspace/mydir:/data \
             busybox cat /data/hello.txt

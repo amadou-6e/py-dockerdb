@@ -243,11 +243,10 @@ def test_build_image_first_time(
     assert client.images.get(postgres_init_config.image_name), "Image should exist after building"
 
 
-@pytest.mark.usefixtures("create_test_image")
 def test_build_image_second_time(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,
-    postgres_image,
+    postgres_init_image,
 ):
     """Test that building the image a second time skips the build process."""
     f = io.StringIO()
