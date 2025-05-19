@@ -8,7 +8,7 @@ jobs:
 
     # 1) Run the steps themselves inside the official Docker CLI container
     container:
-      image: docker:stable
+      image: docker:dind
       options: --privileged
 
     # 2) Spin up a Docker-in-Docker daemon as a service
@@ -18,11 +18,8 @@ jobs:
         options: >-
           --privileged
           -v /github/workspace:/github/workspace
-
-    # 3) Point the CLI to the daemon
-    env:
-      DOCKER_HOST: tcp://docker:2375
-      DOCKER_TLS_CERTDIR: ""
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock:ro
 
     steps:
       - uses: actions/checkout@v4
