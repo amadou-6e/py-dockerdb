@@ -9,6 +9,8 @@ import psycopg2
 import time
 import docker
 import requests
+import platform
+from pydos2unix import dos2unix
 from pydantic import BaseModel
 from pathlib import Path
 from docker.errors import NotFound, APIError
@@ -130,6 +132,20 @@ class ContainerManager:
         """
         raise NotImplementedError(
             "This method is not implemented on the abstract container handler class.")
+
+    def _conver_script_to_unix(self):
+        """
+        Convert all init scripts in the specified directory to Unix line endings.
+        This is necessary for compatibility with Docker containers that expect
+        Unix-style line endings.
+        """
+        if platform.system() != "Windows":
+            return
+        for script in self.config.init_script.parent.glob("*.sh"):
+            with script.open("rb") as src:
+                buffer = dos2unix(src)
+            with script.open("wb") as dest:
+                dest.write(buffer)
 
     def _is_docker_running(self, docker_base_url: str = None, timeout: int = 10):
         """

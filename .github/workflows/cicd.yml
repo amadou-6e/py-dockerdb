@@ -1,39 +1,29 @@
-name: Docker Outside Docker Tests
+name: Docker Inside Docker Tests
 
 on: [push, pull_request]
 
 jobs:
-  build:
+  docker-inside-docker:
     runs-on: ubuntu-latest
 
-    # 1) Run the steps themselves inside the official Docker CLI container
-    container:
-      image: docker:dind
-      options: --privileged
-
-    # 2) Spin up a Docker-in-Docker daemon as a service
     services:
       docker:
-        image: docker:stable-dind     # or pin to a specific version
-        options: >-
-          --privileged
-          -v /github/workspace:/workspace
-        volumes:
-          - /var/run/docker.sock:/var/run/docker.sock:ro
+        image: docker:dind
+        options: --privileged --shm-size=2g
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Create test file in the job container
+      - name: Build orchestrator test container
         run: |
-          mkdir -p mydir
-          echo "Hello from the job container!" > mydir/hello.txt
+          docker build -t test-runner -f Dockerfile.test .
 
-      - name: Verify mount from DinD
+      - name: Run tests inside orchestrator container
         run: |
-          # mount from the dind container’s /workspace 
-          # into our new busybox container’s /data
           docker run --rm \
-            -v /workspace/mydir:/data \
-            busybox cat /data/hello.txt
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            test-runner \
+            bash -c "pytest tests/"

@@ -45,7 +45,7 @@ def cleanup_test_containers():
     client = docker.from_env()
     for container in client.containers.list(all=True):  # include stopped
         name = container.name
-        if name.startswith("test-mongodb"):
+        if name.startswith("test-mongo"):
             print(f"Cleaning up container: {name}")
             try:
                 container.stop(timeout=5)
@@ -62,7 +62,6 @@ def cleanup_temp_dir():
     """
     Brutally clean TEMP_DIR before and after each test, cross-platform.
     """
-
     nuke_dir(TEMP_DIR)
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 

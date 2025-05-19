@@ -34,12 +34,14 @@ Examples
 import psycopg2
 import time
 import docker
+import platform
 from pathlib import Path
 from docker.errors import APIError
 from docker.models.containers import Container
 from psycopg2.extras import RealDictCursor
 from psycopg2 import OperationalError
 from psycopg2 import sql
+from pydos2unix import dos2unix
 # -- Ours --
 from docker_db.containers import ContainerConfig, ContainerManager
 
@@ -150,6 +152,20 @@ class PostgresDB(ContainerManager):
             cursor_factory=RealDictCursor,
         )
 
+    def _conver_script_to_unix(self):
+        """
+        Convert all init scripts in the specified directory to Unix line endings.
+        This is necessary for compatibility with Docker containers that expect
+        Unix-style line endings.
+        """
+        if platform.system() != "Windows":
+            return
+        for script in self.config.init_script.parent.glob("*.sh"):
+            with script.open("rb") as src:
+                buffer = dos2unix(src)
+            with script.open("wb") as dest:
+                dest.write(buffer)
+
     def _create_container(self, force: bool = False):
         """
         Create a new Postgres container with volume, env and port mappings.
@@ -197,6 +213,8 @@ class PostgresDB(ContainerManager):
         if self.config.init_script is not None:
             if not self.config.init_script.exists():
                 raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
+            self._conver_script_to_unix()
+
             mounts.append(
                 docker.types.Mount(
                     target='/docker-entrypoint-initdb.d',
