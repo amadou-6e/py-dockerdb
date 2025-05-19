@@ -1,0 +1,59 @@
+name: Docker Outside Docker Tests
+
+on: [push, pull_request]
+
+jobs:
+  docker-outside-docker:
+    runs-on: ubuntu-latest
+    
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged --shm-size=2g
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    container:
+      image: ubuntu:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            python3 \
+            python3.12-venv \
+            python3-pip \
+            python3-dev \
+            build-essential \
+            g++ \
+            unixodbc-dev \
+            libffi-dev \
+            libssl-dev \
+            curl \
+            git 
+
+      - name: Create and activate virtualenv, install deps
+        run: |
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install --no-cache-dir -r requirements.txt -r etc/dev_requirements.txt
+          
+      - name: Prepare mount dir
+        run: mkdir -p tests/data/tmp/mgdata
+
+      - name: Run Pytest with Docker SDK
+        run: |
+          . venv/bin/activate
+          pytest tests/test_mongodb.py
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_mssql.py
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_postgres.py
+
+      - name: Run Pytest with Docker SDK
+        run: pytest tests/test_mysql.py
