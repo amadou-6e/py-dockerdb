@@ -14,7 +14,7 @@ jobs:
           - /var/run/docker.sock:/var/run/docker.sock:ro
 
     container:
-      image: ubuntu-latest
+      image: ubuntu:latest
 
     steps:
       - name: Checkout code
