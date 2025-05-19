@@ -3,46 +3,38 @@ name: Docker Outside Docker Tests
 on: [push, pull_request]
 
 jobs:
-  docker-outside-docker:
+  test:
     runs-on: ubuntu-latest
 
     container:
-      image: docker:dind
-      options: --privileged
+      image: python:3.10
+      options: --user root  # needed if you need to install deps
+
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+        ports:
+          - 2375:2375
+
+    env:
+      DOCKER_HOST: tcp://docker:2375
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Install system dependencies
+      - name: Install pip deps
         run: |
-          apk update && apk add --no-cache \
-            python3 \
-            py3-pip \
-            python3-dev \
-            build-base \
-            g++ \
-            musl-dev \
-            unixodbc-dev \
-            libffi-dev \
-            openssl-dev
-
-      - name: Create and activate virtualenv, install deps
-        run: |
+          apt-get update && apt-get install -y python3-pip python3-venv
           python3 -m venv venv
           . venv/bin/activate
-          pip install --no-cache-dir -r requirements.txt -r etc/dev_requirements.txt
+          pip install -r requirements.txt -r etc/dev_requirements.txt
 
-      - name: Run Pytest with Docker SDK
+      - name: Create mount dir
+        run: mkdir -p tests/data/tmp/mgdata
+
+      - name: Run tests (containers will be children of DinD)
         run: |
           . venv/bin/activate
           pytest tests/test_mongodb.py
 
-      - name: Run Pytest with Docker SDK
-        run: pytest tests/test_mssql.py
-
-      - name: Run Pytest with Docker SDK
-        run: pytest tests/test_postgres.py
-
-      - name: Run Pytest with Docker SDK
-        run: pytest tests/test_mysql.py
