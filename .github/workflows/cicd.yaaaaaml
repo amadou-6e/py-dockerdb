@@ -5,18 +5,10 @@ on: [push, pull_request]
 jobs:
   docker-outside-docker:
     runs-on: ubuntu-latest
-    
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged
-        ports:
-          - 2375:2375
 
     container:
       image: docker:dind
-      env:
-        DOCKER_HOST: tcp://docker:2375
+      options: --privileged
 
     steps:
       - name: Checkout code
