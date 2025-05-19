@@ -9,14 +9,14 @@ jobs:
     services:
       docker:
         image: docker:dind
-        options: --privileged
-        ports:
-          - 2375:2375
+        options: --privileged --shm-size=2g
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock:ro
 
     container:
       image: docker:dind
-      env:
-        DOCKER_HOST: tcp://docker:2375
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock:ro
 
     steps:
       - name: Checkout code
