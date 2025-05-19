@@ -11,14 +11,17 @@ jobs:
       options: --privileged
 
     steps:
-      - name: Install Docker CLI
-        run: |
-          apt-get update
-          apt-get install -y docker.io
-
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Install Python, pip, and system deps
+        run: |
+          apk update
+          apk add --no-cache python3 py3-pip build-base
+
+      - name: Install Python dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+        
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
