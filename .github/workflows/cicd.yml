@@ -14,9 +14,7 @@ jobs:
           - /var/run/docker.sock:/var/run/docker.sock:ro
 
     container:
-      image: docker:dind
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock:ro
+      image: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -24,7 +22,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          apk update && apk add --no-cache \
+          apt-get update && apt-get add --no-cache \
             python3 \
             py3-pip \
             python3-dev \
