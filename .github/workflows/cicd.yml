@@ -25,6 +25,9 @@ jobs:
             git \
             g++ \
             python3-dev \
+            libffi-dev \
+            openssl-dev \
+            unixodbc-dev \
             build-base \
             curl
 
