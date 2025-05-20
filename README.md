@@ -1,24 +1,37 @@
 # Docker-DB
 
-A Python library for managing containerized databases through Docker. This library provides a simple interface for creating, configuring, and managing database containers for development and testing environments.
+A Python library for managing containerized databases through Docker. This library provides a simple interface for creating, configuring, and managing database containers for development and testing environments, from within python.
 
 ## Features
 
+The following features are supported:
+
 - Easy setup and management of database containers
-- Supports multiple database engines:
-  - MongoDB
-  - Microsoft SQL Server
-  - PostgreSQL
 - Automated container lifecycle management
 - Standardized configuration interfaces
 - Connection management and health checking
 - Volume persistence capabilities
 - Initialization script support
 
+The following features will be supported:
+- Enable/Disable error if already created
+- startddb
+- restartdb
+- init scripts to examples
+
+The following databases are supported:
+  - MongoDB
+  - Microsoft SQL Server
+  - PostgreSQL
+  - MySQL
+
+These databases might be added in the future:
+- Cassandra
+
 ## Installation
 
 ```bash
-pip install docker-db
+pip install py-dockerdb
 ```
 
 ## Requirements
@@ -29,8 +42,11 @@ pip install docker-db
   - `pymongo` for MongoDB
   - `pyodbc` for Microsoft SQL Server
   - `psycopg2` for PostgreSQL
+  - `mysql-connector-python` for MySQL
 
 ## Basic Usage
+
+Check out the following usage examples:
 
 ### MongoDB Example
 
@@ -60,32 +76,6 @@ db.stop_db()
 
 # Completely remove the container
 db.delete_db()
-```
-
-### Microsoft SQL Server Example
-
-```python
-from docker_db.mssql import MSSQLConfig, MSSQLDB
-
-# Create configuration
-config = MSSQLConfig(
-    user="testuser",
-    password="testpass",
-    database="testdb",
-    sa_password="StrongPassword123!",
-    container_name="test-mssql"
-)
-
-# Create and start MSSQL container
-db = MSSQLDB(config)
-db.create_db()
-
-# Connect to database
-conn = db.connection
-# Use the database...
-
-# Stop the container when done
-db.stop_db()
 ```
 
 ### PostgreSQL Example

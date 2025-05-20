@@ -85,6 +85,7 @@ class MSSQLConfig(ContainerConfig):
     password: str
     database: str
     sa_password: str
+    host: str = "127.0.0.1"
     port: int = 1433
     _type: str = "mssql"
 

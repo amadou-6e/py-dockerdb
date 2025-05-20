@@ -81,8 +81,6 @@ class ContainerConfig(BaseModel):
         self.workdir = self.workdir or Path(os.getenv("WORKDIR", os.getcwd()))
         self.image_name = self.image_name or DEFAULT_IMAGE_MAP[self._type]
         self.container_name = self.container_name or f"{self.project_name}-{self._type}"
-        self.dockerfile_path = (self.dockerfile_path or
-                                Path(self.workdir, "docker", "Dockerfile.pgdb"))
         self.volume_path = (self.volume_path or
                             Path(self.workdir, f"{SHORTHAND_MAP[self._type]}data"))
         self.volume_path.mkdir(parents=True, exist_ok=True)
@@ -237,7 +235,7 @@ class ContainerManager:
             except docker.errors.APIError as e:
                 raise RuntimeError(f"Failed to remove image {image.id}") from e
 
-    def _build_image(self):
+    def _build_image(self, force: bool = False):
         """
         Build the custom PostgreSQL image if not present.
         
@@ -254,8 +252,18 @@ class ContainerManager:
         except docker.errors.APIError as e:
             raise RuntimeError("Failed to list Docker images") from e
 
-        if images:
-            return  # image already exists
+        if images and not force:
+            return
+        if self.config.dockerfile_path is None:
+            name_tag_split = self.config.image_name.split(":")
+            image_name = name_tag_split[0]
+            image_tage = name_tag_split[1] if len(name_tag_split) > 1 else "latest"
+            self.client.images.pull(image_name, tag=image_tage)
+            return
+
+        if not self.config.dockerfile_path.exists():
+            raise FileNotFoundError(
+                f"Dockerfile not found at {self.config.dockerfile_path}. Please check the path.")
 
         print(f"Building image {self.config.image_name}...")
         try:
@@ -385,9 +393,15 @@ class ContainerManager:
         NotImplementedError
             This method must be implemented by subclasses
         """
-        # Create the container, the database and have it running as external API
-        raise NotImplementedError(
-            "This method is not implemented on the abstract container handler class.")
+        # Ensure container is running
+        db_name = db_name or self.config.database
+        self._build_image()
+        self._create_container()
+        if self.config.volume_path is not None:
+            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
+        self._start_container()
+        self._test_connection()
+        self._create_db(db_name, container=container)
 
     def _container_state(self, container: Container = None) -> str:
         """
