@@ -1,4 +1,29 @@
-import os
+"""
+MySQL container management module.
+
+This module provides classes to manage MySQL database containers using Docker.
+It enables developers to easily create, configure, start, stop, and delete MySQL
+containers for development and testing purposes.
+
+The module defines two main classes:
+- MySQLConfig: Configuration settings for MySQL containers
+- MySQLDB: Manager for MySQL container lifecycle
+
+Examples
+--------
+>>> from docker_db.mysql import MySQLConfig, MySQLDB
+>>> config = MySQLConfig(
+...     user="testuser",
+...     password="testpass",
+...     database="testdb",
+...     root_password="rootpass",
+...     container_name="test-mysql"
+... )
+>>> db = MySQLDB(config)
+>>> db.create_db()
+>>> # Use the database...
+>>> db.stop_db()
+"""
 import mysql.connector
 import time
 import docker
@@ -11,6 +36,47 @@ from docker_db.containers import ContainerConfig, ContainerManager
 
 
 class MySQLConfig(ContainerConfig):
+    """
+    Configuration for MySQL container.
+    
+    This class extends ContainerConfig with MySQL-specific configuration options.
+    It provides the necessary settings to create and connect to a MySQL
+    database running in a Docker container.
+    
+    Parameters
+    ----------
+    user : str
+        MySQL username for database access.
+    password : str
+        MySQL password for database access.
+    database : str
+        Name of the default database to create.
+    root_password : str
+        MySQL root user password.
+    port : int, optional
+        Port on which MySQL will listen, by default 3306.
+    
+    Attributes
+    ----------
+    user : str
+        MySQL username.
+    password : str
+        MySQL password.
+    database : str
+        Name of the default database.
+    root_password : str
+        MySQL root password.
+    port : int
+        Port mapping for MySQL service (host:container).
+    _type : str
+        Type identifier, set to "mysql".
+        
+    Notes
+    -----
+    This class inherits additional container configuration parameters from
+    the parent ContainerConfig class, such as container_name, image_name,
+    volume_path, etc.
+    """
     user: str
     password: str
     database: str
@@ -22,9 +88,45 @@ class MySQLConfig(ContainerConfig):
 class MySQLDB(ContainerManager):
     """
     Manages lifecycle of a MySQL container via Docker SDK.
+    
+    This class provides functionality to create, start, stop, and delete
+    MySQL containers using the Docker SDK. It also handles database creation,
+    user management, and connection establishment.
+    
+    Parameters
+    ----------
+    config : MySQLConfig
+        Configuration object containing MySQL and container settings.
+        
+    Attributes
+    ----------
+    config : MySQLConfig
+        The configuration object for this MySQL instance.
+    client : docker.client.DockerClient
+        Docker client for interacting with the Docker daemon.
+    database_created : bool
+        Flag indicating whether the database has been created successfully.
+    
+    Raises
+    ------
+    AssertionError
+        If Docker is not running when initializing.
     """
 
     def __init__(self, config):
+        """
+        Initialize MySQLDB with the provided configuration.
+        
+        Parameters
+        ----------
+        config : MySQLConfig
+            Configuration object containing MySQL and container settings.
+            
+        Raises
+        ------
+        AssertionError
+            If Docker is not running.
+        """
         self.config: MySQLConfig = config
         assert self._is_docker_running()
         self.client = docker.from_env()
@@ -33,6 +135,17 @@ class MySQLDB(ContainerManager):
     def connection(self):
         """
         Establish a new mysql.connector connection.
+        
+        Returns
+        -------
+        connection : mysql.connector.connection.MySQLConnection
+            A new connection to the MySQL database.
+            
+        Notes
+        -----
+        This creates a new connection each time it's called.
+        If the database has been created (indicated by the database_created attribute),
+        the connection will include the database name in the connection string.
         """
         return mysql.connector.connect(
             host=self.config.host,
@@ -44,6 +157,25 @@ class MySQLDB(ContainerManager):
     def _create_container(self, force: bool = False):
         """
         Create a new MySQL container with volume, env and port mappings.
+        
+        Parameters
+        ----------
+        force : bool, optional
+            If True, remove existing container with the same name before creating
+            a new one, by default False.
+            
+        Returns
+        -------
+        container : docker.models.containers.Container or None
+            The created container object, or None if container already exists and
+            force is False.
+            
+        Raises
+        ------
+        RuntimeError
+            If container creation fails.
+        FileNotFoundError
+            If the specified initialization script does not exist.
         """
         if self._is_container_created():
             if force:
@@ -106,6 +238,24 @@ class MySQLDB(ContainerManager):
         db_name: str = None,
         container: Container = None,
     ):
+        """
+        Create a new MySQL database and ensure container is running.
+        
+        This method builds the Docker image if needed, creates and starts the container,
+        creates the specified database, and tests the connection.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to create, defaults to self.config.database if None.
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+            
+        Raises
+        ------
+        RuntimeError
+            If container creation, database creation, or connection test fails.
+        """
         # Ensure container is running
         db_name = db_name or self.config.database
         self._build_image()
@@ -121,6 +271,11 @@ class MySQLDB(ContainerManager):
         db_name: str = None,
         container: Container = None,
     ):
+        """
+        Stop the MySQL container.
+        
+        This method stops the container and prints its state.
+        """
         container = container or self.client.containers.get(self.config.container_name)
         container.reload()
         if not container.attrs.get("State", {}).get("Running", False):
@@ -158,17 +313,46 @@ class MySQLDB(ContainerManager):
             raise RuntimeError(f"Failed to create database: {e}")
 
     def stop_db(self):
+        """
+        Delete the MySQL container.
+        
+        This method removes the container completely.
+        """
         # Stop container
         self._stop_container()
         self._container_state()
 
     def delete_db(self):
+        """
+        Delete the MySQL container.
+        
+        This method removes the container completely.
+        """
         # Remove container
         self._remove_container()
 
     def wait_for_db(self, container=None) -> bool:
         """
         Wait until MySQL is accepting connections and ready.
+        
+        This method has two phases:
+        1. Wait for Docker container to be in 'Running' state
+        2. Wait for MySQL to be ready to accept connections
+        
+        Parameters
+        ----------
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+            
+        Returns
+        -------
+        bool
+            True if database is ready, False if timeout was reached.
+            
+        Raises
+        ------
+        OperationalError
+            If an unexpected database connection error occurs.
         """
 
         # Phase 1: wait for Docker container to be 'Running'

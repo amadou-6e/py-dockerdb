@@ -1,4 +1,30 @@
-import os
+"""
+MongoDB container management module.
+
+This module provides classes to manage MongoDB database containers using Docker.
+It enables developers to easily create, configure, start, stop, and delete MongoDB
+containers for development and testing purposes.
+
+The module defines two main classes:
+- MongoDBConfig: Configuration settings for MongoDB containers
+- MongoDB: Manager for MongoDB container lifecycle
+
+Examples
+--------
+>>> from docker_db.mongodb import MongoDBConfig, MongoDB
+>>> config = MongoDBConfig(
+...     user="testuser",
+...     password="testpass",
+...     database="testdb",
+...     root_username="admin",
+...     root_password="adminpass",
+...     container_name="test-mongodb"
+... )
+>>> db = MongoDB(config)
+>>> db.create_db()
+>>> # Use the database...
+>>> db.stop_db()
+"""
 import time
 import docker
 from pathlib import Path
@@ -11,6 +37,51 @@ from docker_db.containers import ContainerConfig, ContainerManager
 
 
 class MongoDBConfig(ContainerConfig):
+    """
+    Configuration for MongoDB container.
+    
+    This class extends ContainerConfig with MongoDB-specific configuration options.
+    It provides the necessary settings to create and connect to a MongoDB
+    database running in a Docker container.
+    
+    Parameters
+    ----------
+    user : str
+        MongoDB username for database access.
+    password : str
+        MongoDB password for database access.
+    database : str
+        Name of the default database to create.
+    root_username : str
+        MongoDB root (admin) username.
+    root_password : str
+        MongoDB root (admin) password.
+    port : int, optional
+        Port on which MongoDB will listen, by default 27017.
+    
+    Attributes
+    ----------
+    user : str
+        MongoDB username.
+    password : str
+        MongoDB password.
+    database : str
+        Name of the default database.
+    root_username : str
+        MongoDB root username.
+    root_password : str
+        MongoDB root password.
+    port : int
+        Port mapping for MongoDB service (host:container).
+    _type : str
+        Type identifier, set to "mongodb".
+        
+    Notes
+    -----
+    This class inherits additional container configuration parameters from
+    the parent ContainerConfig class, such as container_name, image_name,
+    volume_path, etc.
+    """
     user: str
     password: str
     database: str
@@ -23,6 +94,29 @@ class MongoDBConfig(ContainerConfig):
 class MongoDB(ContainerManager):
     """
     Manages lifecycle of a MongoDB container via Docker SDK.
+    
+    This class provides functionality to create, start, stop, and delete
+    MongoDB containers using the Docker SDK. It also handles database creation,
+    user management, and connection establishment.
+    
+    Parameters
+    ----------
+    config : MongoDBConfig
+        Configuration object containing MongoDB and container settings.
+        
+    Attributes
+    ----------
+    config : MongoDBConfig
+        The configuration object for this MongoDB instance.
+    client : docker.client.DockerClient
+        Docker client for interacting with the Docker daemon.
+    database_created : bool
+        Flag indicating whether the database has been created successfully.
+    
+    Raises
+    ------
+    AssertionError
+        If Docker is not running when initializing.
     """
 
     def __init__(self, config):
@@ -34,6 +128,16 @@ class MongoDB(ContainerManager):
     def connection(self):
         """
         Establish a new MongoDB connection.
+        
+        Returns
+        -------
+        connection : pymongo.MongoClient
+            A new connection to the MongoDB database.
+            
+        Notes
+        -----
+        This creates a new connection each time it's called.
+        The connection uses the user credentials specified in the configuration.
         """
         db_name = self.config.database or "admin"
         connection_string = (f"mongodb://{self.config.user}:{self.config.password}@"
@@ -45,6 +149,16 @@ class MongoDB(ContainerManager):
     def _get_conn_string(self, db_name: str = None) -> str:
         """
         Get MongoDB connection string with root credentials.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to connect to. If None, connects to the admin database.
+            
+        Returns
+        -------
+        str
+            A connection string for MongoDB using root credentials.
         """
         db_name = db_name or "admin"
         return (f"mongodb://{self.config.root_username}:{self.config.root_password}@"
@@ -54,6 +168,25 @@ class MongoDB(ContainerManager):
     def _create_container(self, force: bool = False):
         """
         Create a new MongoDB container with volume, env and port mappings.
+        
+        Parameters
+        ----------
+        force : bool, optional
+            If True, remove existing container with the same name before creating
+            a new one, by default False.
+            
+        Returns
+        -------
+        container : docker.models.containers.Container or None
+            The created container object, or None if container already exists and
+            force is False.
+            
+        Raises
+        ------
+        RuntimeError
+            If container creation fails.
+        FileNotFoundError
+            If the specified initialization script does not exist.
         """
         if self._is_container_created():
             if force:
@@ -111,6 +244,24 @@ class MongoDB(ContainerManager):
         db_name: str = None,
         container: Container = None,
     ):
+        """
+        Create a new MongoDB database and ensure container is running.
+        
+        This method builds the Docker image if needed, creates and starts the container,
+        tests the connection, and creates the specified database.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to create, defaults to self.config.database if None.
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+            
+        Raises
+        ------
+        RuntimeError
+            If container creation, database creation, or connection test fails.
+        """
         # Ensure container is running
         db_name = db_name or self.config.database
         self._build_image()
@@ -126,6 +277,25 @@ class MongoDB(ContainerManager):
         db_name: str = None,
         container: Container = None,
     ):
+        """
+        Create a database in the running MongoDB container.
+        
+        This method creates a database user with the specified credentials and
+        grants appropriate permissions. In MongoDB, databases are created on-demand
+        when they are first accessed.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to create, defaults to self.config.database if None.
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+            
+        Raises
+        ------
+        RuntimeError
+            If the container is not running or database creation fails.
+        """
         db_name = db_name or self.config.database
         container = container or self.client.containers.get(self.config.container_name)
         container.reload()
@@ -170,17 +340,46 @@ class MongoDB(ContainerManager):
             raise RuntimeError(f"Failed to create database: {e}")
 
     def stop_db(self):
+        """
+        Stop the MongoDB container.
+        
+        This method stops the container and prints its state.
+        """
         # Stop container
         self._stop_container()
         self._container_state()
 
     def delete_db(self):
+        """
+        Delete the MongoDB container.
+        
+        This method removes the container completely.
+        """
         # Remove container
         self._remove_container()
 
     def wait_for_db(self, container=None) -> bool:
         """
         Wait until MongoDB is accepting connections and ready.
+        
+        This method has two phases:
+        1. Wait for Docker container to be in 'Running' state
+        2. Wait for MongoDB to be ready to accept connections
+        
+        Parameters
+        ----------
+        container : docker.models.containers.Container, optional
+            Container object to use, if None will get container by name from Docker.
+            
+        Returns
+        -------
+        bool
+            True if database is ready, False if timeout was reached.
+            
+        Raises
+        ------
+        OperationFailure
+            If an unexpected database operation error occurs.
         """
         try:
             container = container or self.client.containers.get(self.config.container_name)

@@ -7,3 +7,4 @@ setuptools
 docker
 pyodbc
 mysql-connector-python
+pydos2unix
