@@ -454,6 +454,113 @@ def test_stop_db(
 
 
 @pytest.mark.usefixtures("clear_port_5432")
+@pytest.mark.parametrize("running_ok", [True, False])
+def test_start_db_running_ok(
+    postgres_init_config: PostgresConfig,
+    postgres_init_manager: PostgresDB,
+    running_ok: bool,
+):
+    """Test starting DB with different running_ok values when container is already running."""
+    # First create and start the container
+    postgres_init_manager.create_db()
+    time.sleep(2)  # Give Postgres time to initialize
+
+    # Get the container's start time for comparison later
+    client = docker.from_env()
+    container = client.containers.get(postgres_init_config.container_name)
+    initial_start_time = container.attrs.get('State', {}).get('StartedAt', '')
+    assert container.status == "running"
+
+    # Start again with the specified running_ok value
+    f = io.StringIO()
+    with redirect_stdout(f):
+        postgres_init_manager.start_db(running_ok=running_ok)
+
+    # Reload container to get current state
+    container.reload()
+    assert container.status == "running"
+    new_start_time = container.attrs.get('State', {}).get('StartedAt', '')
+
+    # Check if restart happened based on running_ok value
+    if running_ok:
+        assert new_start_time == initial_start_time, "Container should not have been restarted"
+    else:
+        assert new_start_time != initial_start_time, "Container should have been restarted"
+
+    # Verify we can still connect
+    postgres_init_manager._test_connection()
+
+
+@pytest.mark.usefixtures("clear_port_5432")
+@pytest.mark.parametrize("force", [True, False])
+def test_start_db_force(
+    postgres_init_config: PostgresConfig,
+    postgres_init_manager: PostgresDB,
+    force: bool,
+):
+    """Test starting DB with different force values."""
+    # First create and start the container
+    postgres_init_manager.create_db()
+    time.sleep(2)  # Give Postgres time to initialize
+
+    # Create a test table to verify data persistence
+    conn = psycopg2.connect(
+        host=postgres_init_config.host,
+        port=postgres_init_config.port,
+        database=postgres_init_config.user,
+        user=postgres_init_config.user,
+        password=postgres_init_config.password,
+        cursor_factory=RealDictCursor,
+    )
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE force_test_table (id serial PRIMARY KEY, data text);")
+    cur.execute("INSERT INTO force_test_table (data) VALUES ('test_data');")
+    conn.commit()
+    conn.close()
+
+    # Get container ID for comparison
+    client = docker.from_env()
+    container = client.containers.get(postgres_init_config.container_name)
+    initial_container_id = container.id
+
+    # Start again with the specified force value
+    f = io.StringIO()
+    with redirect_stdout(f):
+        postgres_init_manager.start_db(force=force)
+
+    # Get the container after operation
+    client = docker.from_env()
+    containers = client.containers.list(filters={"name": postgres_init_config.container_name})
+    assert len(containers) == 1
+    new_container = containers[0]
+
+    # Check if container was recreated based on force value
+    if force:
+        assert new_container.id != initial_container_id, "Container should have been recreated"
+    else:
+        assert new_container.id == initial_container_id, "Container should not have been recreated"
+
+    # Verify we can connect
+    postgres_init_manager._test_connection()
+
+    # Since data volume is persisted, table should still exist in either case
+    conn = psycopg2.connect(
+        host=postgres_init_config.host,
+        port=postgres_init_config.port,
+        database=postgres_init_config.user,
+        user=postgres_init_config.user,
+        password=postgres_init_config.password,
+        cursor_factory=RealDictCursor,
+    )
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM force_test_table;")
+    result = cur.fetchone()
+    assert result is not None
+    assert result['data'] == 'test_data'
+    conn.close()
+
+
+@pytest.mark.usefixtures("clear_port_5432")
 def test_delete_db(
     postgres_init_config: PostgresConfig,
     postgres_init_manager: PostgresDB,

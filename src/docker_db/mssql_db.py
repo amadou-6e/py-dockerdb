@@ -188,103 +188,40 @@ class MSSQLDB(ContainerManager):
         conn_string += f"DATABASE={db_name};" if db_name else ""
         return conn_string
 
-    def _create_container(self, force: bool = False):
-        """
-        Create a new MSSQL container with volume, env and port mappings.
-        
-        Parameters
-        ----------
-        force : bool, optional
-            If True, remove existing container with the same name before creating
-            a new one, by default False.
-            
-        Returns
-        -------
-        container : docker.models.containers.Container or None
-            The created container object, or None if container already exists and
-            force is False.
-            
-        Raises
-        ------
-        RuntimeError
-            If container creation fails.
-        """
-        if self._is_container_created():
-            if force:
-                print(f"Container {self.config.container_name} already exists. Removing it.")
-                self._remove_container()
-            else:
-                print(f"Container {self.config.container_name} already exists.")
-                return
-        env = {
+    def _get_environment_vars(self):
+        return {
             'ACCEPT_EULA': 'Y',
             'SA_PASSWORD': self.config.sa_password,
             'MSSQL_PID': 'Developer',
         }
-        mounts = [
+
+    def _get_volume_mounts(self):
+        return [
             docker.types.Mount(
                 target='/var/opt/mssql/data',
                 source=str(self.config.volume_path),
                 type='bind',
             )
         ]
-        ports = {'1433/tcp': self.config.port}
 
-        try:
-            container = self.client.containers.create(
-                image=self.config.image_name,
-                name=self.config.container_name,
-                environment=env,
-                mounts=mounts,
-                ports=ports,
-                detach=True,
-                healthcheck={
-                    'Test': [
-                        'CMD', '/opt/mssql-tools/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P',
-                        self.config.sa_password, '-Q', 'SELECT 1'
-                    ],
-                    'Interval': 30000000000,  # 30s
-                    'Timeout': 3000000000,  # 3s
-                    'Retries': 5,
-                },
-            )
-            container.db = self.config.database
-            return container
-        except APIError as e:
-            raise RuntimeError(f"Failed to create container: {e.explanation}") from e
+    def _get_port_mappings(self):
+        return {'1433/tcp': self.config.port}
 
-    def create_db(
-        self,
-        db_name: str | None = None,
-        container: Container = None,
-    ):
-        """
-        Create a new SQL Server database and ensure container is running.
-        
-        This method builds the Docker image if needed, creates and starts the container,
-        creates the specified database, and tests the connection.
-        
-        Parameters
-        ----------
-        db_name : str, optional
-            Name of the database to create, defaults to self.config.database if None.
-        container : docker.models.containers.Container, optional
-            Container object to use, if None will get container by name from Docker.
-            
-        Raises
-        ------
-        RuntimeError
-            If container creation, database creation, or connection test fails.
-        """
-        # Ensure container is running
-        db_name = db_name or self.config.database
-        self._build_image()
-        self._create_container()
-        if self.config.volume_path is not None:
-            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
-        self._start_container()
-        self._create_db(db_name, container=container)
-        self._test_connection()
+    def _get_healthcheck(self):
+        return {
+            'Test': [
+                'CMD', '/opt/mssql-tools/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-P',
+                self.config.sa_password, '-Q', 'SELECT 1'
+            ],
+            'Interval': 30000000000,  # 30s
+            'Timeout': 3000000000,  # 3s
+            'Retries': 5,
+        }
+
+    def _handle_init_script(self, mounts):
+        # MSSQL might not support init scripts the same way
+        # Override if needed or use super() if the behavior is similar
+        pass
 
     def _execute_sql_script(self, script_path: Path | str, db_name: str, verbose=True):
         """
@@ -427,26 +364,7 @@ class MSSQLDB(ContainerManager):
         except OperationalError as e:
             raise RuntimeError(f"Failed to create database: {e}")
 
-    def stop_db(self):
-        """
-        Stop the SQL Server container.
-        
-        This method stops the container and prints its state.
-        """
-        # Stop container
-        self._stop_container()
-        self._container_state()
-
-    def delete_db(self):
-        """
-        Delete the SQL Server container.
-        
-        This method removes the container completely.
-        """
-        # Remove container
-        self._remove_container()
-
-    def wait_for_db(self, container: Container | None = None) -> bool:
+    def _wait_for_db(self, container: Container | None = None) -> bool:
         """
         Wait until SQL Server is accepting connections and ready.
         

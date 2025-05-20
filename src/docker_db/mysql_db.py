@@ -154,117 +154,35 @@ class MySQLDB(ContainerManager):
             password=self.config.password,
             database=self.config.database if hasattr(self, 'database_created') else None)
 
-    def _create_container(self, force: bool = False):
-        """
-        Create a new MySQL container with volume, env and port mappings.
-        
-        Parameters
-        ----------
-        force : bool, optional
-            If True, remove existing container with the same name before creating
-            a new one, by default False.
-            
-        Returns
-        -------
-        container : docker.models.containers.Container or None
-            The created container object, or None if container already exists and
-            force is False.
-            
-        Raises
-        ------
-        RuntimeError
-            If container creation fails.
-        FileNotFoundError
-            If the specified initialization script does not exist.
-        """
-        if self._is_container_created():
-            if force:
-                print(f"Container {self.config.container_name} already exists. Removing it.")
-                self._remove_container()
-            else:
-                print(f"Container {self.config.container_name} already exists.")
-                return
-        env = {
+    def _get_environment_vars(self):
+        return {
             'MYSQL_USER': self.config.user,
             'MYSQL_PASSWORD': self.config.password,
             'MYSQL_ROOT_PASSWORD': self.config.root_password,
         }
-        mounts = [
+
+    def _get_volume_mounts(self):
+        return [
             docker.types.Mount(
                 target='/var/lib/mysql',
                 source=str(self.config.volume_path),
                 type='bind',
             )
         ]
-        ports = {'3306/tcp': self.config.port}
 
-        # If init script provided, copy to image via bind mount
-        if self.config.init_script is not None:
-            if not self.config.init_script.exists():
-                raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
-            mounts.append(
-                docker.types.Mount(
-                    target='/docker-entrypoint-initdb.d',
-                    source=str(self.config.init_script.parent.resolve()),
-                    type='bind',
-                    read_only=True,
-                ))
+    def _get_port_mappings(self):
+        return {'3306/tcp': self.config.port}
 
-        try:
-            container = self.client.containers.create(
-                image=self.config.image_name,
-                name=self.config.container_name,
-                environment=env,
-                mounts=mounts,
-                ports=ports,
-                detach=True,
-                healthcheck={
-                    'Test': [
-                        'CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root',
-                        '--password=' + self.config.root_password
-                    ],
-                    'Interval': 30000000000,  # 30s
-                    'Timeout': 3000000000,  # 3s
-                    'Retries': 5,
-                },
-            )
-            container.db = self.config.database
-            return container
-        except APIError as e:
-            raise RuntimeError(f"Failed to create container: {e.explanation}") from e
-
-    def create_db(
-        self,
-        db_name: str = None,
-        container: Container = None,
-    ):
-        """
-        Create a new MySQL database and ensure container is running.
-        
-        This method builds the Docker image if needed, creates and starts the container,
-        creates the specified database, and tests the connection.
-        
-        Parameters
-        ----------
-        db_name : str, optional
-            Name of the database to create, defaults to self.config.database if None.
-        container : docker.models.containers.Container, optional
-            Container object to use, if None will get container by name from Docker.
-            
-        Raises
-        ------
-        RuntimeError
-            If container creation, database creation, or connection test fails.
-        """
-        # Ensure container is running
-        db_name = db_name or self.config.database
-        self._build_image()
-        self._create_container()
-        if self.config.volume_path is not None:
-            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
-        self._start_container()
-        self._create_db(db_name, container=container)
-        self._test_connection()
+    def _get_healthcheck(self):
+        return {
+            'Test': [
+                'CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root',
+                '--password=' + self.config.root_password
+            ],
+            'Interval': 30000000000,  # 30s
+            'Timeout': 3000000000,  # 3s
+            'Retries': 5,
+        }
 
     def _create_db(
         self,
@@ -312,26 +230,7 @@ class MySQLDB(ContainerManager):
         except OperationalError as e:
             raise RuntimeError(f"Failed to create database: {e}")
 
-    def stop_db(self):
-        """
-        Delete the MySQL container.
-        
-        This method removes the container completely.
-        """
-        # Stop container
-        self._stop_container()
-        self._container_state()
-
-    def delete_db(self):
-        """
-        Delete the MySQL container.
-        
-        This method removes the container completely.
-        """
-        # Remove container
-        self._remove_container()
-
-    def wait_for_db(self, container=None) -> bool:
+    def _wait_for_db(self, container=None) -> bool:
         """
         Wait until MySQL is accepting connections and ready.
         

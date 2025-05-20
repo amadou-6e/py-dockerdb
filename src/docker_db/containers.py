@@ -131,6 +131,237 @@ class ContainerManager:
         raise NotImplementedError(
             "This method is not implemented on the abstract container handler class.")
 
+    def state(self, container: Container = None) -> str:
+        """
+        Get the current state of the container.
+        
+        Parameters
+        ----------
+        container : docker.models.containers.Container, optional
+            Container to check, fetches by name if not provided
+        
+        Returns
+        -------
+        str
+            Current state of the container ("running", "exited", etc.)
+        """
+        return self._container_state(container=container)
+
+    def create_db(
+        self,
+        db_name: str = None,
+        container: Container = None,
+        exists_ok: bool = True,
+        running_ok: bool = True,
+        force: bool = False,
+    ):
+        """
+        Create the container, the database and have it running.
+        
+        Parameters
+        ----------
+        db_name : str
+            Name of the database to create
+        container : docker.models.containers.Container, optional
+            Container reference, fetches by name if not provided
+        exists_ok : bool, default True
+            If True, continue if the database already exists
+        running_ok : bool, default True
+            If True, continue if the container is already running
+        force : bool, default False
+            If True, remove existing container and create a new one
+        
+        Returns
+        -------
+        container : docker.models.containers.Container
+            The container running the database
+        
+        Raises
+        ------
+        NotImplementedError
+            This method must be implemented by subclasses
+        RuntimeError
+            If container creation or starting fails
+        ConnectionError
+            If database does not become ready within the configured timeout
+        """
+        # Ensure container is running
+        db_name = db_name or self.config.database
+        self._build_image()
+        self._create_container(
+            exists_ok=exists_ok or running_ok,
+            force=force,
+        )
+        if self.config.volume_path is not None:
+            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
+        self.start_db(
+            container=container,
+            running_ok=running_ok,
+            force=force,
+        )
+        self._create_db(
+            db_name,
+            container=container,
+        )
+
+    def start_db(
+        self,
+        container: Container = None,
+        running_ok: bool = True,
+        force: bool = False,
+    ):
+        """
+        Start the database container and wait until it's healthy.
+        
+        Parameters
+        ----------
+        container : docker.models.containers.Container, optional
+            Container to start, fetches by name if not provided
+        running_ok : bool, default True
+            If True, continue if the container is already running and just wait
+            for the database to be ready
+        force : bool, default False
+            If True, recreate the container even if it already exists
+        
+        Returns
+        -------
+        container : docker.models.containers.Container
+            The started container
+        
+        Raises
+        ------
+        RuntimeError
+            If container not found or fails to start
+        ConnectionError
+            If database does not become ready within the configured timeout
+        """
+        self._start_container(
+            container=container,
+            running_ok=running_ok,
+            force=force,
+        )
+        self._test_connection()
+
+    def restart_db(self, container=None, wait_timeout: int = 30):
+        """
+        Restart the database container, ensuring it's fully stopped before restarting.
+        
+        Parameters
+        ----------
+        wait_timeout : int, optional
+            Timeout in seconds to wait for the container to stop, by default 30
+            
+        Returns
+        -------
+        container : docker.models.containers.Container
+            The restarted container object
+            
+        Raises
+        ------
+        RuntimeError
+            If container not found, fails to stop, or fails to restart
+        ConnectionError
+            If database does not become ready within the configured timeout
+        """
+
+        try:
+            container = container or self.client.containers.get(self.config.container_name)
+        except NotFound:
+            raise RuntimeError(f"Container {self.config.container_name} not found. Cannot restart.")
+
+        # Stop the container
+        print(f"Stopping container {self.config.container_name}...")
+        try:
+            container.stop(timeout=wait_timeout)
+        except APIError as e:
+            raise RuntimeError(f"Failed to stop container: {e.explanation}") from e
+
+        # Wait for the container to actually stop and the port to be free
+        self._wait_for_container_stop(
+            container,
+            timeout=wait_timeout,
+        )
+
+        print(f"Starting container {self.config.container_name}...")
+        return self._start_container(
+            container=container,
+            running_ok=False,
+        )
+
+    def stop_db(self, container: Container | None = None, force: bool = False):
+        """
+        Stop the PostgreSQL container.
+
+        This method stops the container and prints its state.
+        """
+        # Stop container
+        self._stop_container(
+            container=container,
+            force=force,
+        )
+        self._wait_for_container_stop(
+            container,
+            self.config.port,
+        )
+
+    def delete_db(self, container: Container | None = None, running_ok: bool = False):
+        """
+        Delete the PostgreSQL container.
+
+        This method removes the container completely.
+        """
+        # Remove container
+        if self.state == "running" and not running_ok:
+            raise RuntimeError(
+                f"Container {self.config.container_name} is still running. Stop it first or specify running_ok=True."
+            )
+        elif self.state == "running":
+            self.stop_db(container)
+        self._remove_container()
+
+    def _wait_for_container_stop(self, container=None, port: int = None, timeout: int = 30):
+        """
+        Wait for the specific container to stop and its port to become free.
+        
+        Parameters
+        ----------
+        container : docker.models.containers.Container
+            The container to wait for
+        port : int
+            The port to check
+        timeout : int, optional
+            Timeout in seconds, by default 30
+            
+        Raises
+        ------
+        RuntimeError
+            If the container doesn't stop within the timeout
+        """
+        container = container or self.client.containers.get(self.config.container_name)
+        port = port or self.config.port
+        start_time = time.time()
+
+        while True:
+            # Check if we've exceeded the timeout
+            if time.time() - start_time > timeout:
+                raise RuntimeError(
+                    f"Timeout waiting for container {self.config.container_name} to stop")
+
+            # Refresh container state
+            container.reload()
+
+            if container.status in ['stopped', 'exited', 'created']:
+                container.reload()
+
+                # Check if port is still bound for this container
+                ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
+                if f"{port}/tcp" not in ports or ports[f"{port}/tcp"] is None:
+                    print(f"Container {self.config.container_name} stopped and port {port} is free")
+                    time.sleep(2)
+                    return
+
+            time.sleep(0.5)
+
     def _conver_script_to_unix(self):
         """
         Convert all init scripts in the specified directory to Unix line endings.
@@ -281,7 +512,7 @@ class ContainerManager:
         except docker.errors.BuildError as e:
             raise RuntimeError(f"Failed to build image: {str(e)}") from e
 
-    def _remove_container(self):
+    def _remove_container(self, container: Container | None = None):
         """
         Force-remove existing container if it exists.
         
@@ -294,31 +525,121 @@ class ContainerManager:
             If container removal fails due to Docker API errors
         """
         try:
-            container = self.client.containers.get(self.config.container_name)
+            container = container or self.client.containers.get(self.config.container_name)
             container.remove(force=True)
         except NotFound:
             pass  # nothing to remove
         except APIError as e:
             raise RuntimeError(f"Failed to remove container: {e.explanation}") from e
 
-    def _create_container(self):
+    def _create_container(
+        self,
+        force: bool = False,
+        exists_ok: bool = True,
+    ) -> Container | None:
         """
-        Create a new PostgreSQL container with volume, env and port mappings.
-        
+        Create a new database container with volume, env and port mappings.
+
+        Parameters
+        ----------
+        force : bool, optional
+            If True, remove existing container with the same name before creating
+            a new one, by default False.
+
         Returns
         -------
-        container : docker.models.containers.Container
-            The created Docker container
-        
+        container : docker.models.containers.Container or None
+            The created container object, or None if container already exists and
+            force is False.
+
         Raises
         ------
-        NotImplementedError
-            This method must be implemented by subclasses
+        FileNotFoundError
+            If an init script is specified but does not exist.
+        RuntimeError
+            If container creation fails.
         """
-        raise NotImplementedError(
-            "This method is not implemented on the abstract container handler class.")
+        if self._is_container_created():
+            if force:
+                print(f"Container {self.config.container_name} already exists. Removing it.")
+                self._remove_container()
+            elif exists_ok:
+                print(f"Container {self.config.container_name} already exists.")
+                return
+            else:
+                raise RuntimeError(
+                    f"Container {self.config.container_name} already exists. Use force=True "
+                    "to remove it, or set exists_ok=True to ignore the error.")
 
-    def _start_container(self, container: Container = None):
+        # Get database-specific configurations
+        env = self._get_environment_vars()
+        mounts = self._get_volume_mounts()
+        ports = self._get_port_mappings()
+        healthcheck = self._get_healthcheck()
+
+        # Handle init script if present
+        self._handle_init_script(mounts)
+
+        try:
+            container = self.client.containers.create(
+                image=self.config.image_name,
+                name=self.config.container_name,
+                environment=env,
+                mounts=mounts,
+                ports=ports,
+                detach=True,
+                healthcheck=healthcheck,
+            )
+            container.db = self.config.database
+            return container
+        except APIError as e:
+            raise RuntimeError(f"Failed to create container: {e.explanation}") from e
+
+    def _handle_init_script(self, mounts):
+        """Handle initialization script if provided."""
+        if hasattr(self.config, 'init_script') and self.config.init_script is not None:
+            if not self.config.init_script.exists():
+                raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
+
+            # Optional conversion for specific databases (e.g., Postgres)
+            if hasattr(self, '_convert_script_to_unix'):
+                self._convert_script_to_unix()
+
+            mounts.append(
+                docker.types.Mount(
+                    target=self._get_init_script_target(),
+                    source=str(self.config.init_script.parent.resolve()),
+                    type='bind',
+                    read_only=True,
+                ))
+
+    # Abstract methods to be implemented by subclasses
+    def _get_environment_vars(self):
+        """Return database-specific environment variables."""
+        raise NotImplementedError
+
+    def _get_volume_mounts(self):
+        """Return database-specific volume mounts."""
+        raise NotImplementedError
+
+    def _get_port_mappings(self):
+        """Return database-specific port mappings."""
+        raise NotImplementedError
+
+    def _get_healthcheck(self):
+        """Return database-specific healthcheck configuration."""
+        raise NotImplementedError
+
+    def _get_init_script_target(self):
+        """Return the target path for initialization scripts."""
+        return '/docker-entrypoint-initdb.d'
+
+    def _start_container(
+        self,
+        container: Container = None,
+        force: bool = False,
+        running_ok: bool = True,
+    ):
         """
         Start the container and wait until healthy.
         
@@ -340,13 +661,28 @@ class ContainerManager:
             except NotFound:
                 raise RuntimeError("Container not found. Did you create it?")
 
+        container.reload()
+        if container.status == 'running':
+            if force:
+                print(f"Container {container.name} is already running. Stopping it...")
+                self._stop_container(container=container, force=True)
+            elif running_ok:
+                # Just wait for the DB to be ready if it's already running
+                if not self._wait_for_db(container=container):
+                    raise ConnectionError("Database did not become ready in time.")
+                return container
+            else:
+                raise RuntimeError(
+                    f"Container {container.name} is already running. Use force=True to stop it, "
+                    "or running_ok=True to ignore it.")
+
         try:
             container.start()
         except APIError as e:
             raise RuntimeError(f"Failed to start container: {e.explanation}") from e
 
         # Wait for healthcheck or direct connect
-        if not self.wait_for_db(container=container):
+        if not self._wait_for_db(container=container):
             raise ConnectionError("Database did not become ready in time.")
 
     def _create_db(
@@ -372,36 +708,6 @@ class ContainerManager:
         # Create the database inside the database (like creating a database inside a pg database instance)
         raise NotImplementedError(
             "This method is not implemented on the abstract container handler class.")
-
-    def create_db(
-        self,
-        db_name: str,
-        container: Container = None,
-    ):
-        """
-        Create the container, the database and have it running.
-        
-        Parameters
-        ----------
-        db_name : str
-            Name of the database to create
-        container : docker.models.containers.Container, optional
-            Container reference, fetches by name if not provided
-        
-        Raises
-        ------
-        NotImplementedError
-            This method must be implemented by subclasses
-        """
-        # Ensure container is running
-        db_name = db_name or self.config.database
-        self._build_image()
-        self._create_container()
-        if self.config.volume_path is not None:
-            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
-        self._start_container()
-        self._test_connection()
-        self._create_db(db_name, container=container)
 
     def _container_state(self, container: Container = None) -> str:
         """
@@ -462,7 +768,7 @@ class ContainerManager:
         except APIError as e:
             raise RuntimeError(f"Failed to stop container: {e.explanation}") from e
 
-    def wait_for_db(self, container=None) -> bool:
+    def _wait_for_db(self, container=None) -> bool:
         """
         Wait until PostgreSQL is accepting connections and ready.
         

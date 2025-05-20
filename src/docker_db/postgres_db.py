@@ -152,115 +152,31 @@ class PostgresDB(ContainerManager):
             cursor_factory=RealDictCursor,
         )
 
-    def _create_container(self, force: bool = False):
-        """
-        Create a new Postgres container with volume, env and port mappings.
-
-        Parameters
-        ----------
-        force : bool, optional
-            If True, remove existing container with the same name before creating
-            a new one, by default False.
-
-        Returns
-        -------
-        container : docker.models.containers.Container or None
-            The created container object, or None if container already exists and
-            force is False.
-
-        Raises
-        ------
-        FileNotFoundError
-            If an init script is specified but does not exist.
-        RuntimeError
-            If container creation fails.
-        """
-        if self._is_container_created():
-            if force:
-                print(f"Container {self.config.container_name} already exists. Removing it.")
-                self._remove_container()
-            else:
-                print(f"Container {self.config.container_name} already exists.")
-                return
-        env = {
+    def _get_environment_vars(self):
+        return {
             'POSTGRES_USER': self.config.user,
             'POSTGRES_PASSWORD': self.config.password,
         }
-        mounts = [
+
+    def _get_volume_mounts(self):
+        return [
             docker.types.Mount(
                 target='/var/lib/postgresql/data',
                 source=str(self.config.volume_path),
                 type='bind',
             )
         ]
-        ports = {'5432/tcp': self.config.port}
 
-        # If init script provided, copy to image via bind mount or Dockerfile
-        if self.config.init_script is not None:
-            if not self.config.init_script.exists():
-                raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
-            self._conver_script_to_unix()
+    def _get_port_mappings(self):
+        return {'5432/tcp': self.config.port}
 
-            mounts.append(
-                docker.types.Mount(
-                    target='/docker-entrypoint-initdb.d',
-                    source=str(self.config.init_script.parent.resolve()),
-                    type='bind',
-                    read_only=True,
-                ))
-
-        try:
-            container = self.client.containers.create(
-                image=self.config.image_name,
-                name=self.config.container_name,
-                environment=env,
-                mounts=mounts,
-                ports=ports,
-                detach=True,
-                healthcheck={
-                    'Test': ['CMD-SHELL', 'pg_isready -U $POSTGRES_USER'],
-                    'Interval': 30000000000,  # 30s
-                    'Timeout': 3000000000,  # 3s
-                    'Retries': 5,
-                },
-            )
-            container.db = self.config.database
-            return container
-        except APIError as e:
-            raise RuntimeError(f"Failed to create container: {e.explanation}") from e
-
-    def create_db(
-        self,
-        db_name: str | None = None,
-        container: Container | None = None,
-    ):
-        """
-        Create a new PostgreSQL database and ensure container is running.
-
-        This method builds the Docker image if needed, creates and starts the container,
-        creates the specified database, and tests the connection.
-
-        Parameters
-        ----------
-        db_name : str, optional
-            Name of the database to create, defaults to self.config.database if None.
-        container : docker.models.containers.Container, optional
-            Container object to use, if None will get container by name from Docker.
-
-        Raises
-        ------
-        RuntimeError
-            If container creation, database creation, or connection test fails.
-        """
-        # Ensure container is running
-        db_name = db_name or self.config.database
-        self._build_image()
-        self._create_container()
-        if self.config.volume_path is not None:
-            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
-        self._start_container()
-        self._create_db(db_name, container=container)
-        self._test_connection()
+    def _get_healthcheck(self):
+        return {
+            'Test': ['CMD-SHELL', 'pg_isready -U $POSTGRES_USER'],
+            'Interval': 30000000000,  # 30s
+            'Timeout': 3000000000,  # 3s
+            'Retries': 5,
+        }
 
     def _create_db(
         self,
@@ -303,26 +219,7 @@ class PostgresDB(ContainerManager):
         except psycopg2.Error as e:
             raise RuntimeError(f"Failed to create database: {e}")
 
-    def stop_db(self):
-        """
-        Stop the PostgreSQL container.
-
-        This method stops the container and prints its state.
-        """
-        # Stop container
-        self._stop_container()
-        self._container_state()
-
-    def delete_db(self):
-        """
-        Delete the PostgreSQL container.
-
-        This method removes the container completely.
-        """
-        # Remove container
-        self._remove_container()
-
-    def wait_for_db(self, container: Container | None = None) -> bool:
+    def _wait_for_db(self, container: Container | None = None) -> bool:
         """
         Wait until PostgreSQL is accepting connections and ready.
 

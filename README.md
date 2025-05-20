@@ -13,9 +13,9 @@ The following features are supported:
 - Volume persistence capabilities
 - Initialization script support
 
-The following features will be supported:
+The following features are implemented but not tested:
 - Enable/Disable error if already created
-- startddb
+- startdb
 - restartdb
 - init scripts to examples
 

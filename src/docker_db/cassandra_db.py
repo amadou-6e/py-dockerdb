@@ -110,21 +110,6 @@ class Cassandra(ContainerManager):
         except APIError as e:
             raise RuntimeError(f"Failed to create container: {e.explanation}") from e
 
-    def create_db(
-        self,
-        keyspace_name: str = None,
-        container: Container = None,
-    ):
-        # Ensure container is running
-        keyspace_name = keyspace_name or self.config.keyspace
-        self._build_image()
-        self._create_container()
-        if self.config.volume_path is not None:
-            Path(self.config.volume_path).mkdir(parents=True, exist_ok=True)
-        self._start_container()
-        self._test_connection()
-        self._create_keyspace(keyspace_name, container=container)
-
     def _create_keyspace(
         self,
         keyspace_name: str = None,
@@ -187,16 +172,7 @@ class Cassandra(ContainerManager):
         except Exception as e:
             raise RuntimeError(f"Failed to create keyspace: {e}")
 
-    def stop_db(self):
-        # Stop container
-        self._stop_container()
-        self._container_state()
-
-    def delete_db(self):
-        # Remove container
-        self._remove_container()
-
-    def wait_for_db(self, container=None) -> bool:
+    def _wait_for_db(self, container=None) -> bool:
         """
         Wait until Cassandra is accepting connections and ready.
         """
