@@ -785,13 +785,15 @@ class ContainerManager:
         
         This is the main entry point for typical usage, as it handles
         checking for an existing database and setting up a new one if needed.
+
+        Raises
+        ------
+        ConnectionError
+            If the database is unreachable and Docker container needs to be started
         """
         try:
             conn = self.connection
             conn.close()
-        except psycopg2.OperationalError:
-            print("DB unreachable, bringing up Docker container...")
-            self._build_image()
-            self._remove_container()
-            container = self._create_container()
-            self._start_container(container)
+        except Exception as e:
+            print(f"DB unreachable. Obtained error: {e}")
+            raise e
