@@ -314,7 +314,7 @@ def test_container_start_and_connect(
     # Ensure container starts and database is reachable
     Path(postgres_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     postgres_init_manager._start_container(postgres_init_container)
-    postgres_init_manager._test_connection()
+    postgres_init_manager.test_connection()
 
     # Give Postgres a moment to finish init
     time.sleep(2)
@@ -343,7 +343,7 @@ def test_stop_and_remove_container(
     # Ensure container starts and database is reachable
     Path(postgres_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     postgres_init_manager._start_container(postgres_init_container)
-    postgres_init_manager._test_connection()
+    postgres_init_manager.test_connection()
 
     # Give Postgres a moment to finish init
     time.sleep(2)
@@ -488,7 +488,7 @@ def test_start_db_running_ok(
         assert new_start_time != initial_start_time, "Container should have been restarted"
 
     # Verify we can still connect
-    postgres_init_manager._test_connection()
+    postgres_init_manager.test_connection()
 
 
 @pytest.mark.usefixtures("clear_port_5432")
@@ -541,7 +541,7 @@ def test_start_db_force(
         assert new_container.id == initial_container_id, "Container should not have been recreated"
 
     # Verify we can connect
-    postgres_init_manager._test_connection()
+    postgres_init_manager.test_connection()
 
     # Since data volume is persisted, table should still exist in either case
     conn = psycopg2.connect(
@@ -569,7 +569,7 @@ def test_delete_db(
     # Ensure container starts and database is reachable
     Path(postgres_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     postgres_init_manager._start_container()
-    postgres_init_manager._test_connection()
+    postgres_init_manager.test_connection()
 
     # Give Postgres a moment to finish init
     time.sleep(2)

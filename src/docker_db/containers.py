@@ -7,6 +7,7 @@ using the Docker SDK for Python.
 import os
 import psycopg2
 import time
+import uuid
 import docker
 import requests
 import platform
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 from pathlib import Path
 from docker.errors import NotFound, APIError
 from docker.models.containers import Container
+from docker_db.utils import is_docker_running
 
 SHORTHAND_MAP = {
     "postgres": "pg",
@@ -80,7 +82,7 @@ class ContainerConfig(BaseModel):
     def model_post_init(self, __context__):
         self.workdir = self.workdir or Path(os.getenv("WORKDIR", os.getcwd()))
         self.image_name = self.image_name or DEFAULT_IMAGE_MAP[self._type]
-        self.container_name = self.container_name or f"{self.project_name}-{self._type}"
+        self.container_name = self.container_name or f"{self.project_name}-{self._type}-{uuid.uuid4().hex[:8]}"
         self.volume_path = (self.volume_path or
                             Path(self.workdir, f"{SHORTHAND_MAP[self._type]}data"))
         self.volume_path.mkdir(parents=True, exist_ok=True)
@@ -240,7 +242,7 @@ class ContainerManager:
             running_ok=running_ok,
             force=force,
         )
-        self._test_connection()
+        self.test_connection()
 
     def restart_db(self, container=None, wait_timeout: int = 30):
         """
@@ -397,26 +399,7 @@ class ContainerManager:
         ConnectionError
             If Docker daemon is not accessible
         """
-        if docker_base_url is None:
-            if os.name == 'nt':
-                # Windows
-                docker_base_url = 'npipe:////./pipe/docker_engine'
-            else:
-                # Unix-based systems
-                docker_base_url = 'unix://var/run/docker.sock'
-
-        try:
-            client = docker.from_env(timeout=timeout)
-            api = docker.APIClient(base_url=docker_base_url, timeout=timeout)
-
-            client.ping()
-        except docker.errors.DockerException as e:
-            raise ConnectionError(
-                f"Docker engine not accessible. Is Docker running? Error: {str(e)}") from e
-        except requests.exceptions.ConnectionError as e:
-            raise ConnectionError(
-                f"Could not connect to Docker daemon at {docker_base_url}. Error: {str(e)}") from e
-        return True
+        is_docker_running()
 
     def _is_container_created(self, container_name: str | None = None) -> bool:
         """
@@ -793,7 +776,7 @@ class ContainerManager:
         raise NotImplementedError(
             "This method is not implemented on the abstract container handler class.")
 
-    def _test_connection(self):
+    def test_connection(self):
         """
         Ensure DB is reachable, otherwise build & start.
         

@@ -340,7 +340,7 @@ def test_container_start_and_connect(
     # Ensure container starts and database is reachable
     Path(mysql_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mysql_init_manager._start_container(mysql_init_container)
-    mysql_init_manager._test_connection()
+    mysql_init_manager.test_connection()
 
     # Give MySQL a moment to finish init
     time.sleep(5)
@@ -367,7 +367,7 @@ def test_stop_and_remove_container(
     # Ensure container starts and database is reachable
     Path(mysql_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mysql_init_manager._start_container(mysql_init_container)
-    mysql_init_manager._test_connection()
+    mysql_init_manager.test_connection()
 
     # Give MySQL a moment to finish init
     time.sleep(5)
@@ -485,7 +485,7 @@ def test_delete_db(
     # Ensure container starts and database is reachable
     Path(mysql_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mysql_init_manager._start_container()
-    mysql_init_manager._test_connection()
+    mysql_init_manager.test_connection()
 
     # Give MySQL a moment to finish init
     time.sleep(5)

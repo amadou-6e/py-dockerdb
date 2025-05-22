@@ -8,7 +8,7 @@ with Path("README.md").open("r", encoding="utf-8") as fh:
 
 setup(
     name="py-dockerdb",
-    version="0.3.0",
+    version="0.5.0",
     author="Amadou Wolfgang Cisse",
     author_email="amadou.6e@googlemail.com",
     description="Python package for working with databases in Docker containers",

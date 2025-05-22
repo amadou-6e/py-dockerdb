@@ -338,7 +338,7 @@ def test_container_start_and_connect(
     # Ensure container starts and database is reachable
     Path(mongodb_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mongodb_init_manager._start_container(mongodb_init_container)
-    mongodb_init_manager._test_connection(), "MongoDB connection test failed"
+    mongodb_init_manager.test_connection(), "MongoDB connection test failed"
 
     # Give MongoDB a moment to finish init
     time.sleep(10)
@@ -389,7 +389,7 @@ def test_stop_and_remove_container(
     # Ensure container starts and database is reachable
     Path(mongodb_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mongodb_init_manager._start_container(mongodb_init_container)
-    mongodb_init_manager._test_connection()
+    mongodb_init_manager.test_connection()
 
     # Give MongoDB a moment to finish init
     time.sleep(5)
@@ -500,7 +500,7 @@ def test_delete_db(
     # Ensure container starts and database is reachable
     Path(mongodb_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     mongodb_init_manager._start_container()
-    mongodb_init_manager._test_connection()
+    mongodb_init_manager.test_connection()
 
     # Give MongoDB a moment to finish init
     time.sleep(5)

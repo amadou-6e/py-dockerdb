@@ -360,7 +360,7 @@ def test_container_start_and_connect(
     # Ensure container starts and keyspace is reachable
     Path(cassandra_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     cassandra_init_manager._start_container(cassandra_init_container)
-    cassandra_init_manager._test_connection(), "Cassandra connection test failed"
+    cassandra_init_manager.test_connection(), "Cassandra connection test failed"
 
     # Give Cassandra more time to fully initialize (it needs more time than MongoDB)
     time.sleep(30)
@@ -425,7 +425,7 @@ def test_stop_and_remove_container(
     # Ensure container starts and keyspace is reachable
     Path(cassandra_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     cassandra_init_manager._start_container(cassandra_init_container)
-    cassandra_init_manager._test_connection()
+    cassandra_init_manager.test_connection()
 
     # Give Cassandra time to finish init
     time.sleep(30)
@@ -541,7 +541,7 @@ def test_delete_db(
     # Ensure container starts and keyspace is reachable
     Path(cassandra_init_config.volume_path).mkdir(parents=True, exist_ok=True)
     cassandra_init_manager._start_container()
-    cassandra_init_manager._test_connection()
+    cassandra_init_manager.test_connection()
 
     # Give Cassandra time to finish init
     time.sleep(30)
