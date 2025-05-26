@@ -11,20 +11,14 @@ fi
 # Run schema + role setup
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
 
--- Create role if it doesn't exist
-DO \$\$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$POSTGRES_USER') THEN
-        CREATE ROLE $POSTGRES_USER WITH LOGIN PASSWORD '$POSTGRES_PASSWORD';
-    END IF;
-END
-\$\$;
-
 -- Create table if it doesn't exist
 CREATE TABLE IF NOT EXISTS test_table (
     id SERIAL PRIMARY KEY,
-    name $YourEnvVar
+    name TEXT
 );
+
+INSERT INTO test_table (name) 
+VALUES ('$YourEnvVar');
 
 
 EOSQL

@@ -162,6 +162,7 @@ class MySQLDB(ContainerManager):
             'MYSQL_USER': self.config.user,
             'MYSQL_PASSWORD': self.config.password,
             'MYSQL_ROOT_PASSWORD': self.config.root_password,
+            'MYSQL_DATABASE': self.config.database,
         }
         default_env_vars.update(self.config.env_vars)
         return default_env_vars
@@ -206,10 +207,12 @@ class MySQLDB(ContainerManager):
 
         try:
             # Connect as root to create database and grant privileges
-            conn = mysql.connector.connect(host=self.config.host,
-                                           port=self.config.port,
-                                           user="root",
-                                           password=self.config.root_password)
+            conn = mysql.connector.connect(
+                host=self.config.host,
+                port=self.config.port,
+                user="root",
+                password=self.config.root_password,
+            )
 
             cursor = conn.cursor()
 
@@ -285,9 +288,7 @@ class MySQLDB(ContainerManager):
                 return True
             except OperationalError as e:
                 error_msg = str(e).lower()
-                # Handle common startup errors
                 if "lost connection to mysql server at 'reading initial communication packet'" in error_msg:
-                    # This error indicates that the server is starting up
                     pass
                 else:
                     raise  # Unknown error — re-raise

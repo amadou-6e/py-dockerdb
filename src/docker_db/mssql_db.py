@@ -81,6 +81,7 @@ class MSSQLDB(ContainerManager):
     AssertionError
         If Docker is not running when initializing.
     """
+    _user_ready_on_start = False
 
     def __init__(self, config: MSSQLConfig):
         """
@@ -297,6 +298,11 @@ class MSSQLDB(ContainerManager):
             print(f"Failed to execute SQL script: {e}")
             return False
 
+    def _convert_script_to_unix(self):
+        """Disable conversion of scripts to Unix format.
+        """
+        pass
+
     def _create_db(
         self,
         db_name: str | None = None,
@@ -348,10 +354,10 @@ class MSSQLDB(ContainerManager):
                     f"SELECT COUNT(*) FROM sys.server_principals WHERE name = '{self.config.user}'")
                 user_exists = cursor.fetchone()[0] > 0
 
-                if not user_exists:
-                    # Create login
-                    cursor.execute(
-                        f"CREATE LOGIN [{self.config.user}] WITH PASSWORD='{self.config.password}'")
+            if not user_exists:
+                # Create login
+                cursor.execute(
+                    f"CREATE LOGIN [{self.config.user}] WITH PASSWORD='{self.config.password}'")
 
                 # Create user and grant permissions (needs to be done in the context of the database)
                 cursor.execute(f"USE [{db_name}]")

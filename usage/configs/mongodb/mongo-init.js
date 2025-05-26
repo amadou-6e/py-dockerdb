@@ -1,40 +1,74 @@
-// Sample MongoDB initialization script
-// This will be executed when the MongoDB container starts
-// File should be placed at CONFIG_DIR/mongodb/initdb.js
+// MongoDB Initialization Script
+// This script runs when the database container starts
 
-// Create a test collection and insert a document
-db = db.getSiblingDB('testdb');
+// Switch to the target database
+db = db.getSiblingDB('demodb');
 
-// Drop the collection if it exists to ensure fresh state
-db.test_collection.drop();
-
-// Create test collection
-db.createCollection('test_collection');
-
-// Insert test document
+// Create a test collection with sample data
 db.test_collection.insertOne({
-    test_field: 'test_value',
+    name: 'Test Entry',
+    environment: process.env.YourEnvVar || 'DefaultValue',
     created_at: new Date(),
-    numeric_value: 42,
-    nested_object: {
-        key1: 'value1',
-        key2: 'value2'
-    },
-    array_field: [1, 2, 3, 4, 5]
+    type: 'initialization_test'
 });
 
-// Create an index
-db.test_collection.createIndex({ test_field: 1 });
+// Create indexes
+db.test_collection.createIndex({ "name": 1 });
+db.test_collection.createIndex({ "environment": 1 });
 
-// Create a second collection
-db.createCollection('another_collection');
+// Create a sample function (stored as a document for later use)
+db.system_functions.insertOne({
+    name: 'get_env_info',
+    function: function() {
+        var doc = db.test_collection.findOne({type: 'initialization_test'});
+        return 'Environment: ' + (doc ? doc.environment : 'Not Set');
+    }.toString(),
+    created_at: new Date()
+});
 
-// Add sample data
-db.another_collection.insertMany([
-    { name: 'Item 1', value: 10 },
-    { name: 'Item 2', value: 20 },
-    { name: 'Item 3', value: 30 }
+// Create initial collections with schema validation
+db.createCollection("users", {
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["username", "email"],
+            properties: {
+                username: {
+                    bsonType: "string",
+                    description: "must be a string and is required"
+                },
+                email: {
+                    bsonType: "string",
+                    pattern: "^.+@.+$",
+                    description: "must be a valid email and is required"
+                },
+                age: {
+                    bsonType: "int",
+                    minimum: 0,
+                    maximum: 150,
+                    description: "must be an integer between 0 and 150"
+                }
+            }
+        }
+    }
+});
+
+// Insert sample users
+db.users.insertMany([
+    {
+        username: "init_user1",
+        email: "init1@example.com",
+        age: 25,
+        created_at: new Date(),
+        source: "initialization"
+    },
+    {
+        username: "init_user2", 
+        email: "init2@example.com",
+        age: 30,
+        created_at: new Date(),
+        source: "initialization"
+    }
 ]);
 
-// Print completion message
-print('MongoDB initialization completed successfully.');
+print("MongoDB initialization completed successfully!");

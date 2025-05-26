@@ -1,44 +1,29 @@
--- Switch to testdb database
-CREATE DATABASE IF NOT EXISTS testdb;
-USE testdb;
+-- MySQL Initialization Script
+-- This script runs when the database container starts
 
--- Create a test table
+-- Ensure we're using the correct database
+USE demodb;
+
+-- Create table if it doesn't exist
 CREATE TABLE IF NOT EXISTS test_table (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    name VARCHAR(255),
+    environment VARCHAR(100)
 );
 
--- Add some sample data
-INSERT INTO test_table (name) VALUES 
-    ('Sample Item 1'),
-    ('Sample Item 2'),
-    ('Sample Item 3');
+-- Insert test data using environment variable
+INSERT INTO test_table (name, environment) 
+VALUES ('Test Entry', @YourEnvVar);
 
--- Create a second table for testing relationships
-CREATE TABLE IF NOT EXISTS test_table_metadata (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    test_table_id INT NOT NULL,
-    meta_key VARCHAR(50) NOT NULL,
-    meta_value TEXT,
-    FOREIGN KEY (test_table_id) REFERENCES test_table(id) ON DELETE CASCADE
-);
-
--- Add some sample metadata
-INSERT INTO test_table_metadata (test_table_id, meta_key, meta_value) VALUES
-    (1, 'description', 'This is sample item 1'),
-    (1, 'category', 'Category A'),
-    (2, 'description', 'This is sample item 2'),
-    (2, 'category', 'Category B'),
-    (3, 'description', 'This is sample item 3'),
-    (3, 'category', 'Category A');
-
--- Create a simple user for testing purposes
--- (In a real environment, you'd use more secure credentials)
-CREATE USER IF NOT EXISTS 'testuser'@'%' IDENTIFIED BY 'testpass';
-GRANT ALL PRIVILEGES ON testdb.* TO 'testuser'@'%';
-FLUSH PRIVILEGES;
-
--- Print success message
-SELECT 'MySQL initialization completed successfully' AS 'Init Status';
+-- Create a sample function
+DELIMITER $$
+CREATE FUNCTION IF NOT EXISTS get_env_info()
+RETURNS VARCHAR(255)
+READS SQL DATA
+DETERMINISTIC
+BEGIN
+    DECLARE env_value VARCHAR(255);
+    SELECT environment INTO env_value FROM test_table LIMIT 1;
+    RETURN CONCAT('Environment: ', IFNULL(env_value, 'Not Set'));
+END$$
+DELIMITER ;

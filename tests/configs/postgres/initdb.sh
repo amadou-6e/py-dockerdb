@@ -23,7 +23,7 @@ END
 -- Create table if it doesn't exist
 CREATE TABLE IF NOT EXISTS test_table (
     id SERIAL PRIMARY KEY,
-    name $YourEnvVar
+    name TEXT
 );
 
 

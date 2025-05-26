@@ -112,6 +112,8 @@ class ContainerManager:
         If Docker daemon is not accessible
     """
 
+    _user_ready_on_start = True
+
     def __init__(self, config):
         self.config: ContainerConfig = config
         assert self._is_docker_running()
@@ -247,6 +249,10 @@ class ContainerManager:
             running_ok=running_ok,
             force=force,
         )
+        if hasattr(self, '_user_ready_on_start') and not self._user_ready_on_start:
+            # MSSQL user is created after the debug is up so the test
+            # will fail. For others this is fine.
+            return
         self.test_connection()
 
     def restart_db(self, container=None, wait_timeout: int = 30):
@@ -375,7 +381,7 @@ class ContainerManager:
         This is necessary for compatibility with Docker containers that expect
         Unix-style line endings.
         """
-        if platform.system() != "Windows":
+        if platform.system() != "Windows" or not self.config.init_script:
             return
         for script in self.config.init_script.parent.glob("*.sh"):
             with script.open("rb") as src:
