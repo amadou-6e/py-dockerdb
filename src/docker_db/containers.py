@@ -12,7 +12,7 @@ import docker
 import requests
 import platform
 from pydos2unix import dos2unix
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pathlib import Path
 from docker.errors import NotFound, APIError
 from docker.models.containers import Container
@@ -39,52 +39,54 @@ DEFAULT_IMAGE_MAP = {
 
 class ContainerConfig(BaseModel):
     """
-    Configuration for PostgreSQL Docker containers.
-    
-    Parameters
-    ----------
-    host : str, default "localhost"
-        The hostname where the PostgreSQL server will be accessible
-    port : int, default 5432
-        The port number where the PostgreSQL server will be accessible
-    project_name : str, default "docker_db"
-        Name of the project, used as a prefix for container and image names
-    image_name : str, optional
-        Name of the Docker image, defaults to "{project_name}-{db_type}:dev"
-    container_name : str, optional
-        Name of the Docker container, defaults to "{project_name}-{db_type}"
-    workdir : Path, optional
-        Working directory for Docker operations, defaults to current directory
-    dockerfile_path : Path, optional
-        Path to the Dockerfile, defaults to "{workdir}/docker/Dockerfile.pgdb"
-    init_script : Path, optional
-        Path to initialization script for database setup
-    volume_path : Path, optional
-        Path to persist PostgreSQL data, defaults to "{workdir}/pgdata"
-    retries : int, default 10
-        Number of connection retry attempts
-    delay : int, default 3
-        Delay in seconds between retry attempts
+    Configuration for a Docker container running a database.
     """
-    host: str = "localhost"
-    port: int | None = None
-    project_name: str = "docker_db"
-    image_name: str | None = None
-    container_name: str | None = None
-    workdir: Path | None = None
-    dockerfile_path: Path | None = None
-    init_script: Path | None = None
-    volume_path: Path | None = None
-    retries: int = 10
-    delay: int = 3
-    _type: str | None = None
+    host: str = Field(
+        default="localhost",
+        description="The hostname where the PostgreSQL server will be accessible",
+    )
+    port: int | None = Field(
+        default=None,
+        description="The port number where the PostgreSQL server will be accessible",
+    )
+    project_name: str = Field(
+        default="docker_db",
+        description="Name of the project, used as a prefix for container and image names",
+    )
+    image_name: str | None = Field(
+        default=None,
+        description='Name of the Docker image, defaults to "{project_name}-{db_type}:dev"',
+    )
+    container_name: str | None = Field(
+        default=None,
+        description='Name of the Docker container, defaults to "{project_name}-{db_type}"',
+    )
+    workdir: Path | None = Field(
+        default=None,
+        description="Working directory for Docker operations, defaults to current directory",
+    )
+    dockerfile_path: Path | None = Field(
+        default=None,
+        description='Path to the Dockerfile, defaults to "{workdir}/docker/Dockerfile.pgdb"',
+    )
+    init_script: Path | None = Field(
+        default=None,
+        description="Path to initialization script for database setup",
+    )
+    volume_path: Path | None = Field(
+        default=None,
+        description='Path to persist PostgreSQL data, defaults to "{workdir}/pgdata"',
+    )
+    retries: int = Field(default=10, description="Number of connection retry attempts")
+    delay: int = Field(default=3, description="Delay in seconds between retry attempts")
+    _type: str | None = None  # internal field, not exposed via schema
 
     def model_post_init(self, __context__):
         self.workdir = self.workdir or Path(os.getenv("WORKDIR", os.getcwd()))
         self.image_name = self.image_name or DEFAULT_IMAGE_MAP[self._type]
         self.container_name = self.container_name or f"{self.project_name}-{self._type}-{uuid.uuid4().hex[:8]}"
-        self.volume_path = (self.volume_path or
-                            Path(self.workdir, f"{SHORTHAND_MAP[self._type]}data"))
+        self.volume_path = self.volume_path or Path(self.workdir,
+                                                    f"{SHORTHAND_MAP[self._type]}data")
         self.volume_path.mkdir(parents=True, exist_ok=True)
         if self.port is None:
             raise ValueError(
@@ -237,6 +239,9 @@ class ContainerManager:
         ConnectionError
             If database does not become ready within the configured timeout
         """
+        # Optional conversion for specific databases (e.g., Postgres)
+        if hasattr(self, '_convert_script_to_unix'):
+            self._convert_script_to_unix()
         self._start_container(
             container=container,
             running_ok=running_ok,
@@ -364,7 +369,7 @@ class ContainerManager:
 
             time.sleep(0.5)
 
-    def _conver_script_to_unix(self):
+    def _convert_script_to_unix(self):
         """
         Convert all init scripts in the specified directory to Unix line endings.
         This is necessary for compatibility with Docker containers that expect
@@ -399,7 +404,7 @@ class ContainerManager:
         ConnectionError
             If Docker daemon is not accessible
         """
-        is_docker_running()
+        return is_docker_running()
 
     def _is_container_created(self, container_name: str | None = None) -> bool:
         """
@@ -583,10 +588,6 @@ class ContainerManager:
         if hasattr(self.config, 'init_script') and self.config.init_script is not None:
             if not self.config.init_script.exists():
                 raise FileNotFoundError(f"Init script {self.config.init_script} does not exist.")
-
-            # Optional conversion for specific databases (e.g., Postgres)
-            if hasattr(self, '_convert_script_to_unix'):
-                self._convert_script_to_unix()
 
             mounts.append(
                 docker.types.Mount(

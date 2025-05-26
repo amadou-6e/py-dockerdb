@@ -28,9 +28,9 @@ import pyodbc
 import time
 import docker
 from pathlib import Path
-from docker.errors import APIError
 from docker.models.containers import Container
 from pyodbc import OperationalError, InterfaceError
+from pydantic import Field
 # -- Ours --
 from docker_db.containers import ContainerConfig, ContainerManager
 
@@ -42,51 +42,15 @@ class MSSQLConfig(ContainerConfig):
     This class extends ContainerConfig with MSSQL-specific configuration options.
     It provides the necessary settings to create and connect to a Microsoft SQL Server 
     database running in a Docker container.
-    
-    Parameters
-    ----------
-    user : str
-        SQL Server username for database access.
-    password : str
-        SQL Server password for database access.
-    database : str
-        Name of the default database to create.
-    sa_password : str
-        SQL Server system administrator (sa) password.
-    port : int, optional
-        Port on which SQL Server will listen, by default 1433.
-    
-    Attributes
-    ----------
-    user : str
-        SQL Server username.
-    password : str
-        SQL Server password.
-    database : str
-        Name of the default database.
-    sa_password : str
-        SQL Server system administrator password.
-    port : int
-        Port mapping for SQL Server service (host:container).
-    _type : str
-        Type identifier, set to "mssql".
-        
-    Notes
-    -----
-    This class inherits additional container configuration parameters from
-    the parent ContainerConfig class, such as container_name, image_name,
-    volume_path, etc.
-    
-    The sa_password must comply with SQL Server password complexity requirements:
-    at least 8 characters long with characters from three of the following categories:
-    uppercase letters, lowercase letters, digits, and non-alphanumeric symbols.
     """
-    user: str
-    password: str
-    database: str
-    sa_password: str
-    host: str = "127.0.0.1"
-    port: int = 1433
+    user: str = Field(description="SQL Server username for database access")
+    password: str = Field(description="SQL Server password for database access")
+    database: str = Field(description="Name of the default database to create")
+    sa_password: str = Field(description="SQL Server system administrator (sa) password")
+    port: int = Field(default=1433, description="Port on which SQL Server will listen")
+    env_vars: dict = Field(
+        default_factory=dict,
+        description="A dictionary of environment variables to set in the container")
     _type: str = "mssql"
 
 
@@ -164,6 +128,48 @@ class MSSQLDB(ContainerManager):
 
         return pyodbc.connect(connection_string)
 
+    def connection_string(self, db_name: str = None, sql_magic: bool = False) -> str:
+        """
+        Get SQL Server connection string.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to connect to. If None, uses the default database
+            from config or connects without specifying a database.
+        sql_magic : bool, optional
+            If True, formats the connection string for use with SQL magic commands
+            (e.g., jupyter notebooks with %sql magic). Default is False.
+            
+        Returns
+        -------
+        str
+            A connection string for SQL Server. Format depends on sql_magic parameter.
+        """
+        # Determine which database to use
+        database = db_name or (self.config.database if hasattr(self, 'database_created') else None)
+
+        if sql_magic:
+            # Format for SQL magic: mssql+pyodbc://user:password@server:port/database?driver=...
+            base_url = f"mssql+pyodbc://{self.config.user}:{self.config.password}@{self.config.host}:{self.config.port}"
+            if database:
+                base_url += f"/{database}"
+            base_url += "?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes&Connection+Timeout=10"
+            return base_url
+        else:
+            # Standard pyodbc connection string format
+            connection_string = (f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                                 f"SERVER={self.config.host},{self.config.port};"
+                                 f"UID={self.config.user};"
+                                 f"PWD={self.config.password};"
+                                 f"TrustServerCertificate=yes;"
+                                 f"Connection Timeout=10;")
+
+            if database:
+                connection_string += f"DATABASE={database};"
+
+            return connection_string
+
     def _get_conn_string(self, db_name: str | None = None):
         """
         Generate a connection string for SQL Server.
@@ -189,11 +195,13 @@ class MSSQLDB(ContainerManager):
         return conn_string
 
     def _get_environment_vars(self):
-        return {
+        default_env_vars = {
             'ACCEPT_EULA': 'Y',
             'SA_PASSWORD': self.config.sa_password,
             'MSSQL_PID': 'Developer',
         }
+        default_env_vars.update(self.config.env_vars)
+        return default_env_vars
 
     def _get_volume_mounts(self):
         return [

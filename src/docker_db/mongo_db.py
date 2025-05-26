@@ -27,10 +27,9 @@ Examples
 """
 import time
 import docker
-from pathlib import Path
+from pydantic import Field
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
-from docker.errors import APIError
 from docker.models.containers import Container
 # -- Ours --
 from docker_db.containers import ContainerConfig, ContainerManager
@@ -43,51 +42,16 @@ class MongoDBConfig(ContainerConfig):
     This class extends ContainerConfig with MongoDB-specific configuration options.
     It provides the necessary settings to create and connect to a MongoDB
     database running in a Docker container.
-    
-    Parameters
-    ----------
-    user : str
-        MongoDB username for database access.
-    password : str
-        MongoDB password for database access.
-    database : str
-        Name of the default database to create.
-    root_username : str
-        MongoDB root (admin) username.
-    root_password : str
-        MongoDB root (admin) password.
-    port : int, optional
-        Port on which MongoDB will listen, by default 27017.
-    
-    Attributes
-    ----------
-    user : str
-        MongoDB username.
-    password : str
-        MongoDB password.
-    database : str
-        Name of the default database.
-    root_username : str
-        MongoDB root username.
-    root_password : str
-        MongoDB root password.
-    port : int
-        Port mapping for MongoDB service (host:container).
-    _type : str
-        Type identifier, set to "mongodb".
-        
-    Notes
-    -----
-    This class inherits additional container configuration parameters from
-    the parent ContainerConfig class, such as container_name, image_name,
-    volume_path, etc.
     """
-    user: str
-    password: str
-    database: str
-    port: int = 27017
-    root_username: str
-    root_password: str
+    user: str = Field(description="MongoDB username for database access")
+    password: str = Field(description="MongoDB password for database access")
+    database: str = Field(description="Name of the default database to create")
+    root_username: str = Field(description="MongoDB root (admin) username")
+    root_password: str = Field(description="MongoDB root (admin) password")
+    port: int = Field(default=27017, description="Port on which MongoDB will listen")
+    env_vars: dict = Field(
+        default_factory=dict,
+        description="A dictionary of environment variables to set in the container")
     _type: str = "mongodb"
 
 
@@ -146,6 +110,25 @@ class MongoDB(ContainerManager):
 
         return MongoClient(connection_string)
 
+    def connection_string(self, db_name: str = None) -> str:
+        """
+        Get MongoDB connection string with user credentials.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to connect to. If None, connects to the default database.
+            
+        Returns
+        -------
+        str
+            A connection string for MongoDB using user credentials.
+        """
+        db_name = db_name or self.config.database or "admin"
+        return (f"mongodb://{self.config.user}:{self.config.password}@"
+                f"{self.config.host}:{self.config.port}/"
+                f"{db_name}?authSource=admin")
+
     def _get_conn_string(self, db_name: str = None) -> str:
         """
         Get MongoDB connection string with root credentials.
@@ -166,10 +149,12 @@ class MongoDB(ContainerManager):
                 f"{db_name}?authSource=admin")
 
     def _get_environment_vars(self):
-        return {
+        default_env_vars = {
             'MONGO_INITDB_ROOT_USERNAME': self.config.root_username,
             'MONGO_INITDB_ROOT_PASSWORD': self.config.root_password,
         }
+        default_env_vars.update(self.config.env_vars)
+        return default_env_vars
 
     def _get_volume_mounts(self):
         return [

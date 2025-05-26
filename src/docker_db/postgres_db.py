@@ -41,7 +41,7 @@ from docker.models.containers import Container
 from psycopg2.extras import RealDictCursor
 from psycopg2 import OperationalError
 from psycopg2 import sql
-from pydos2unix import dos2unix
+from pydantic import Field
 # -- Ours --
 from docker_db.containers import ContainerConfig, ContainerManager
 
@@ -53,41 +53,13 @@ class PostgresConfig(ContainerConfig):
     This class extends ContainerConfig with PostgreSQL-specific configuration options.
     It provides the necessary settings to create and connect to a PostgreSQL database
     running in a Docker container.
-    
-    Parameters
-    ----------
-    user : str
-        PostgreSQL username for authentication.
-    password : str
-        PostgreSQL password for authentication.
-    database : str
-        Name of the default database to create.
-    port : int, optional
-        Port on which PostgreSQL will listen, by default 5432.
-    
-    Attributes
-    ----------
-    user : str
-        PostgreSQL username.
-    password : str
-        PostgreSQL password.
-    database : str
-        Name of the default database.
-    port : int
-        Port mapping for PostgreSQL service (host:container).
-    _type : str
-        Type identifier, set to "postgres".
-        
-    Notes
-    -----
-    This class inherits additional container configuration parameters from
-    the parent ContainerConfig class, such as container_name, image_name,
-    volume_path, etc.
     """
-    user: str
-    password: str
-    database: str
-    port: int = 5432
+    user: str = Field(description="PostgreSQL username for authentication")
+    password: str = Field(description="PostgreSQL password for authentication")
+    database: str = Field(description="Name of the default database to create")
+    port: int = Field(default=5432, description="Port on which PostgreSQL will listen")
+    env_vars: dict = Field(
+        {}, description="A dictionary of environment variables to set in the container")
     _type: str = "postgres"
 
 
@@ -152,11 +124,47 @@ class PostgresDB(ContainerManager):
             cursor_factory=RealDictCursor,
         )
 
+    def connection_string(self, db_name: str = None, sql_magic: bool = False) -> str:
+        """
+        Get PostgreSQL connection string.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to connect to. If None, uses the default database
+            from config or connects without specifying a database.
+        sql_magic : bool, optional
+            If True, formats the connection string for use with SQL magic commands
+            (e.g., jupyter notebooks with %sql magic). Default is False.
+            
+        Returns
+        -------
+        str
+            A connection string for PostgreSQL. Format depends on sql_magic parameter.
+        """
+        # Determine which database to use
+        database = db_name or (self.config.database if hasattr(self, 'database_created') else None)
+
+        if sql_magic:
+            # Format for SQL magic: postgresql://user:password@host:port/database
+            base_url = f"postgresql://{self.config.user}:{self.config.password}@{self.config.host}:{self.config.port}"
+            if database:
+                base_url += f"/{database}"
+            return base_url
+        else:
+            # Standard PostgreSQL connection string format
+            connection_string = f"postgresql://{self.config.user}:{self.config.password}@{self.config.host}:{self.config.port}"
+            if database:
+                connection_string += f"/{database}"
+            return connection_string
+
     def _get_environment_vars(self):
-        return {
+        default_env_vars = {
             'POSTGRES_USER': self.config.user,
             'POSTGRES_PASSWORD': self.config.password,
         }
+        default_env_vars.update(self.config.env_vars)
+        return default_env_vars
 
     def _get_volume_mounts(self):
         return [

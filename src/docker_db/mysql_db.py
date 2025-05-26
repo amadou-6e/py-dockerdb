@@ -27,8 +27,8 @@ Examples
 import mysql.connector
 import time
 import docker
+from pydantic import Field
 from pathlib import Path
-from docker.errors import APIError
 from docker.models.containers import Container
 from mysql.connector.errors import OperationalError
 # -- Ours --
@@ -42,46 +42,15 @@ class MySQLConfig(ContainerConfig):
     This class extends ContainerConfig with MySQL-specific configuration options.
     It provides the necessary settings to create and connect to a MySQL
     database running in a Docker container.
-    
-    Parameters
-    ----------
-    user : str
-        MySQL username for database access.
-    password : str
-        MySQL password for database access.
-    database : str
-        Name of the default database to create.
-    root_password : str
-        MySQL root user password.
-    port : int, optional
-        Port on which MySQL will listen, by default 3306.
-    
-    Attributes
-    ----------
-    user : str
-        MySQL username.
-    password : str
-        MySQL password.
-    database : str
-        Name of the default database.
-    root_password : str
-        MySQL root password.
-    port : int
-        Port mapping for MySQL service (host:container).
-    _type : str
-        Type identifier, set to "mysql".
-        
-    Notes
-    -----
-    This class inherits additional container configuration parameters from
-    the parent ContainerConfig class, such as container_name, image_name,
-    volume_path, etc.
     """
-    user: str
-    password: str
-    database: str
-    root_password: str
-    port: int = 3306
+    user: str = Field(description="MySQL username for database access")
+    password: str = Field(description="MySQL password for database access")
+    database: str = Field(description="Name of the default database to create")
+    root_password: str = Field(description="MySQL root user password")
+    port: int = Field(default=3306, description="Port on which MySQL will listen")
+    env_vars: dict = Field(
+        default_factory=dict,
+        description="A dictionary of environment variables to set in the container")
     _type: str = "mysql"
 
 
@@ -154,12 +123,48 @@ class MySQLDB(ContainerManager):
             password=self.config.password,
             database=self.config.database if hasattr(self, 'database_created') else None)
 
+    def connection_string(self, db_name: str = None, sql_magic: bool = False) -> str:
+        """
+        Get MySQL connection string.
+        
+        Parameters
+        ----------
+        db_name : str, optional
+            Name of the database to connect to. If None, uses the default database
+            from config or connects without specifying a database.
+        sql_magic : bool, optional
+            If True, formats the connection string for use with SQL magic commands
+            (e.g., jupyter notebooks with %sql magic). Default is False.
+            
+        Returns
+        -------
+        str
+            A connection string for MySQL. Format depends on sql_magic parameter.
+        """
+        # Determine which database to use
+        database = db_name or (self.config.database if hasattr(self, 'database_created') else None)
+
+        if sql_magic:
+            # Format for SQL magic: mysql+pymysql://user:password@host:port/database
+            base_url = f"mysql+pymysql://{self.config.user}:{self.config.password}@{self.config.host}:{self.config.port}"
+            if database:
+                base_url += f"/{database}"
+            return base_url
+        else:
+            # Standard MySQL connection string format
+            connection_string = f"mysql://{self.config.user}:{self.config.password}@{self.config.host}:{self.config.port}"
+            if database:
+                connection_string += f"/{database}"
+            return connection_string
+
     def _get_environment_vars(self):
-        return {
+        default_env_vars = {
             'MYSQL_USER': self.config.user,
             'MYSQL_PASSWORD': self.config.password,
             'MYSQL_ROOT_PASSWORD': self.config.root_password,
         }
+        default_env_vars.update(self.config.env_vars)
+        return default_env_vars
 
     def _get_volume_mounts(self):
         return [

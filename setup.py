@@ -11,7 +11,7 @@ def parse_requirements(filename):
 
 setup(
     name="py-dockerdb",
-    version="0.5.0",
+    version="0.8.0",
     author="Amadou Wolfgang Cisse",
     author_email="amadou.6e@googlemail.com",
     description="Python package for working with databases in Docker containers",
@@ -26,7 +26,18 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
     python_requires=">=3.6",
-    install_requires=parse_requirements("requirements.txt"),
+    install_requires=[
+        "psycopg2-binary",
+        "docker",
+        "pytest",
+        "pymongo",
+        "pydantic",
+        "setuptools",
+        "docker",
+        "pyodbc",
+        "mysql-connector-python",
+        "pydos2unix",
+    ],
     include_package_data=True,
     package_data={
         "docker_db": ["tests/data/configs/*/*",],
