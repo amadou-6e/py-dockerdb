@@ -32,6 +32,8 @@ jobs:
 
       - name: Build Docker Image using workspace volume
         run: |
+          ls docker
+          ls ${{ github.workspace }}
           docker build -t my-custom-image docker/Dockerfile.test
           
       - name: Run Container using workspace volume
