@@ -32,7 +32,7 @@ jobs:
 
       - name: Build Docker Image using workspace volume
         run: |
-          docker build -t my-custom-image /workspace
+          docker build -t my-custom-image docker/Dockerfile.test
           
       - name: Run Container using workspace volume
         run: |
