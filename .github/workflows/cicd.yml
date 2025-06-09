@@ -9,7 +9,6 @@ jobs:
   docker-build-and-run:
     runs-on: ubuntu-latest
 
-    # Executor container with Docker-in-Docker support
     container:
       image: docker:latest
       options: --privileged
@@ -18,7 +17,7 @@ jobs:
       - name: Start Docker Daemon
         run: |
           dockerd-entrypoint.sh &
-          sleep 10  # Ensure Docker daemon initializes
+          sleep 10
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,11 +32,8 @@ jobs:
 
       - name: Build Docker Image using workspace volume
         run: |
-          docker run --rm \
-            -v workspace_vol:/workspace \
-            -w /workspace \
-            docker:latest docker build -t my-custom-image .
-
+          docker build -t my-custom-image /workspace
+          
       - name: Run Container using workspace volume
         run: |
           docker run --rm \
