@@ -599,7 +599,7 @@ class ContainerManager:
                 docker.types.Mount(
                     target=self._get_init_script_target(),
                     source=str(self.config.init_script.parent.resolve()),
-                    type='bind',
+                    type='volume',  # 'bind',
                     read_only=True,
                 ))
 
