@@ -1,5 +1,9 @@
 name: Docker Build and Test with DockerHub Caching
 
+permissions:
+  packages: write
+  contents: read
+
 on:
   push:
     branches:
