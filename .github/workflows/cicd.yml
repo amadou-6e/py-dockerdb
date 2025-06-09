@@ -22,6 +22,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Login to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Add Docker Buildx for advanced build features
+      - name: Set up Docker Buildx
+        run: |
+          docker buildx create --use --name builder --driver docker-container
+          docker buildx inspect --bootstrap
+
       - name: Create workspace volume
         run: |
           docker volume create workspace_vol
@@ -30,9 +41,18 @@ jobs:
             -v ${{ github.workspace }}:/tmp/workspace_src \
             alpine cp -a /tmp/workspace_src/. /workspace/
 
-      - name: Build Docker Image using workspace volume
+      - name: Build Docker Image with registry caching
         run: |
-          docker build -t my-custom-image . -f docker/Dockerfile.test
+          # Convert repository name to lowercase for registry
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          
+          docker buildx build \
+            --cache-from=type=registry,ref=ghcr.io/${REPO_NAME}/cache:buildcache \
+            --cache-to=type=registry,ref=ghcr.io/${REPO_NAME}/cache:buildcache,mode=max \
+            --load \
+            -t my-custom-image \
+            -f docker/Dockerfile.test \
+            .
           
       - name: Run Container using workspace volume
         run: |
