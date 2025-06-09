@@ -4,69 +4,44 @@ on:
   push:
     branches:
       - main
-
 jobs:
-  docker-build-and-test:
+  build-and-push:
     runs-on: ubuntu-latest
-
-    container:
-      image: docker:latest
-      options: --privileged
-
     steps:
-      - name: Start Docker Daemon
-        run: |
-          dockerd-entrypoint.sh &
-          sleep 10
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to DockerHub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      # Set up Docker Buildx
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name builder --driver docker-container --bootstrap
-
-      # Login to DockerHub
-      - name: Login to DockerHub
-        run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-
-      # Build with DockerHub registry cache
-      - name: Build Docker image with DockerHub caching
-        run: |
-          # Replace 'your-username' with your actual DockerHub username
-          DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
-          CACHE_REF="${DOCKERHUB_USER}/buildcache:${{ github.repository_owner }}-$(echo ${{ github.repository }} | cut -d'/' -f2)"
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           
-          docker buildx build \
-            --cache-from=type=registry,ref=${CACHE_REF} \
-            --cache-to=type=registry,ref=${CACHE_REF},mode=max \
-            --load \
-            -t my-custom-image \
-            -f docker/Dockerfile.test \
-            .
+  run-tests:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create workspace volume
+      - name: Pull built image
         run: |
-          docker volume create workspace_vol
-          docker run --rm \
-            -v workspace_vol:/workspace \
-            -v ${{ github.workspace }}:/tmp/workspace_src \
-            alpine cp -a /tmp/workspace_src/. /workspace/
-          
+          docker pull ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
+
       - name: Run tests in container
         run: |
-          docker run --rm \
-            -v workspace_vol:/app \
-            my-custom-image \
-            sh -c "echo 'Inside container'; pytest -v tests/test_postgres.py"
+          docker run --rm ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }} \
+            sh -c "pytest -v tests/test_postgres.py"
