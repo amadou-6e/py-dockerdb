@@ -66,6 +66,11 @@ def cleanup_test_containers():
                 print(f"Failed to remove container {name}: {e}")
 
 
+@pytest.fixture
+def clear_port_5432():
+    clear_port(5432, "test-postgres")
+
+
 # =======================================
 #                 Configs
 # =======================================
@@ -216,11 +221,6 @@ def test_docker_running(postgres_manager: PostgresDB):
     client = docker.from_env()
     client.ping()
     assert postgres_manager._is_docker_running(), "Docker is not running"
-
-
-@pytest.fixture
-def clear_port_5432():
-    clear_port(5432, "test-postgres")
 
 
 @pytest.mark.usefixtures("remove_test_image")

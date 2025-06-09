@@ -1,3 +1,4 @@
+'''
 import os
 import time
 import docker
@@ -216,3 +217,4 @@ class Cassandra(ContainerManager):
             time.sleep(self.config.delay)
 
         return False
+'''

@@ -11,10 +11,6 @@ def display_bash_script(script_path: str | Path):
     display(Markdown(markdown_script))
 
 
-from IPython.display import display, Markdown
-from pathlib import Path
-
-
 def display_sql_script(script_path):
     """
     Display SQL script content in a nicely formatted markdown code block.
