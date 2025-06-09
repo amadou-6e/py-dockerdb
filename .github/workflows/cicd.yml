@@ -1,29 +1,45 @@
-name: Docker Inside Docker Tests
+name: Docker-in-Docker with Workspace Volume
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
 
 jobs:
-  docker-inside-docker:
+  docker-build-and-run:
     runs-on: ubuntu-latest
 
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged --shm-size=2g
+    # Executor container with Docker-in-Docker support
+    container:
+      image: docker:latest
+      options: --privileged
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Build orchestrator test container
+      - name: Start Docker Daemon
         run: |
-          docker build -t test-runner -f Dockerfile.test .
+          dockerd-entrypoint.sh &
+          sleep 10  # Ensure Docker daemon initializes
 
-      - name: Run tests inside orchestrator container
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create workspace volume
+        run: |
+          docker volume create workspace_vol
+          docker run --rm \
+            -v workspace_vol:/workspace \
+            -v ${{ github.workspace }}:/tmp/workspace_src \
+            alpine cp -a /tmp/workspace_src/. /workspace/
+
+      - name: Build Docker Image using workspace volume
         run: |
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${{ github.workspace }}:/workspace \
+            -v workspace_vol:/workspace \
             -w /workspace \
-            test-runner \
-            bash -c "pytest tests/"
+            docker:latest docker build -t my-custom-image .
+
+      - name: Run Container using workspace volume
+        run: |
+          docker run --rm \
+            -v workspace_vol:/app \
+            my-custom-image sh -c "echo 'Inside container'; ls -la /app"
