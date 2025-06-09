@@ -41,19 +41,16 @@ jobs:
   run-tests:
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Pull built image
-        run: |
-          docker pull ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }}
-
-      - name: Run tests in container
-        run: |
-          docker run --rm ghcr.io/${{ github.repository_owner }}/my-app:${{ github.sha }} \
-            sh -c "pytest -v tests/test_postgres.py"
+      - name: Run tests
+        run: pytest -v tests/test_postgres.py
